@@ -39,6 +39,10 @@
 #define TORC_DROPOWNERSHIP "DROPOWNERSHIP"
 #define TORC_DROPTIMEOUTS "DROPTIMEOUTS"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 typedef struct {
     int port;
     char* secret;
@@ -71,4 +75,7 @@ void torc_send_str(torc* controller, char* data);
 int torc_send_command(torc* controller, torc_command* command);
 void torc_free_command(torc_command* command);
 
+#ifdef __cplusplus
+}
+#endif
 #endif //TORC_TORC_H
