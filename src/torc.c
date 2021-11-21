@@ -133,7 +133,7 @@ void torc_send_str(torc* controller, char* data) {
 
 int torc_send_command(torc* controller, torc_command* command) {
     char* compiled = torc_compile_command(command);
-    if(command == NULL) return 1;
+    if(compiled == NULL) return 1;
     send(controller->socket, compiled, command->compiled_size, 0);
     free(compiled);
     return 0;
