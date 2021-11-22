@@ -3,41 +3,7 @@
 
 #include <stdbool.h>
 #include <pthread.h>
-
-#define TORC_SETCONF "SETCONF"
-#define TORC_RESETCONF "RESETCONF"
-#define TORC_GETCONF "GETCONF"
-#define TORC_SETEVENTS "SETEVENTS"
-#define TORC_AUTHENTICATE "AUTHENTICATE"
-#define TORC_SAVECONF "SAVECONF"
-#define TORC_SIGNAL "SIGNAL"
-#define TORC_MAPADDRESS "MAPADDRESS"
-#define TORC_GETINFO "GETINFO"
-#define TORC_EXTENDCIRCUIT "EXTENDCIRCUIT"
-#define TORC_SETCIRCUITPURPOSE "SETCIRCUITPURPOSE"
-#define TORC_SETROUTERPURPOSE "SETROUTERPURPOSE"
-#define TORC_ATTACHSTREAM "ATTACHSTREAM"
-#define TORC_POSTDESCRIPTOR "POSTDESCRIPTOR"
-#define TORC_REDIRECTSTREAM "REDIRECTSTREAM"
-#define TORC_CLOSESTREAM "CLOSESTREAM"
-#define TORC_CLOSECIRCUIT "CLOSECIRCUIT"
-#define TORC_QUIT "QUIT"
-#define TORC_USEFEATURE "USEFEATURE"
-#define TORC_RESOLVE "RESOLVE"
-#define TORC_PROTOCOLINFO "PROTOCOLINFO"
-#define TORC_LOADCONF "LOADCONF"
-#define TORC_TAKEOWNERSHIP "TAKEOWNERSHIP"
-#define TORC_AUTHCHALLENGE "AUTHCHALLENGE"
-#define TORC_DROPGUARDS "DROPGUARDS"
-#define TORC_HSFETCH "HSFETCH"
-#define TORC_ADD_ONION "ADD_ONION"
-#define TORC_DEL_ONION "DEL_ONION"
-#define TORC_HSPOST "HSPOST"
-#define TORC_ONION_CLIENT_AUTH_ADD "ONION_CLIENT_AUTH_ADD"
-#define TORC_ONION_CLIENT_AUTH_REMOVE "ONION_CLIENT_AUTH_REMOVE"
-#define TORC_ONION_CLIENT_AUTH_VIEW "ONION_CLIENT_AUTH_VIEW"
-#define TORC_DROPOWNERSHIP "DROPOWNERSHIP"
-#define TORC_DROPTIMEOUTS "DROPTIMEOUTS"
+#include "torcmds.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -52,19 +18,22 @@ typedef struct {
     bool received;
     bool ok;
     char code[3];
-    char* error; // the final error message (OK if no error)
+    char* error; // the location of the final error message ("OK" if no error)
     size_t len;
     char* data;
     char* curr;
     size_t buf_len; // length of data buffer, not actual length of data
+    size_t lines; // lines in response
+    size_t* line_lens; // characters of each line
+    size_t line_buf_len;
 } torc_response;
 
 typedef struct {
     char* keyword;
     char** params;
-    int param_len;
-    int curr_param;
-    unsigned long compiled_len;
+    size_t param_len;
+    size_t curr_param;
+    size_t compiled_len;
     torc_response response;
 } torc_command;
 
@@ -75,9 +44,9 @@ typedef struct {
     bool alive;
     bool debug;
     torc_response** responses;
-    int responses_len;
-    int response_write_num;
-    int response_read_num;
+    size_t responses_len;
+    size_t response_write_num;
+    size_t response_read_num;
 } torc;
 
 torc_info torc_default_addr_info();
@@ -91,6 +60,17 @@ char* torc_compile_command(torc_command* command);
 int torc_send_command_async(torc* controller, torc_command* command);
 int torc_send_command(torc* controller, torc_command* command);
 void torc_free_command(torc_command* command);
+
+char* torc_get_line(torc_response* response, int line);
+void torc_print_line(torc_response* response, int line); // debug function
+
+// 'auto' authenticates with cookie, safe cookie, or none if possible
+// all authentication functions return false on fail
+// TODO: FINISH COOKIE AND AUTO AUTHENTICATION
+bool torc_auto_authenticate(torc* controller);
+bool torc_cookie_authenticate(torc* controller);
+bool torc_safe_cookie_authenticate(torc* controller);
+bool torc_password_authenticate(torc* controller, char* password);
 
 #ifdef __cplusplus
 }

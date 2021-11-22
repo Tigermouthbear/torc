@@ -18,28 +18,35 @@ static torc_response* pop_awaiting_response(torc* controller) {
     return response;
 }
 
-static void expand_response_buffer(torc* controller) {
+static int expand_response_buffer(torc* controller) {
     // reallocate buffer to twice the previous size
-    int prev_len = controller->responses_len;
-    controller->responses = realloc(controller->responses, sizeof(torc_response*) * controller->responses_len * 2);
+    size_t prev_len = controller->responses_len;
+    controller->responses = realloc(controller->responses, sizeof(torc_response*) * prev_len * 2);
+    if(controller->responses == NULL) {
+        perror("[TORC] FAILED TO EXPAND REPONSE BUFFER");
+        return 1;
+    }
     controller->responses_len *= 2;
 
     // move the data after the write pointer and change the read pointer
     void* src = controller->responses + sizeof(torc_response*) * controller->response_read_num;
     void* dst = src + sizeof(torc_response*) * prev_len;
     size_t size = dst - src;
-    memcpy(dst, src, size);
-    memset(src, 0, size);
+    memcpy(dst, src, size); // copy
+    memset(src, 0, size); // then zero where moved from
     controller->response_read_num += prev_len;
+
+    return 0;
 }
 
-static void push_awaiting_response(torc* controller, torc_response* response) {
+static int push_awaiting_response(torc* controller, torc_response* response) {
     if(controller->responses[controller->response_write_num] != NULL) {
-        expand_response_buffer(controller);
+        if(expand_response_buffer(controller) != 0) return 1;
     }
 
     controller->responses[controller->response_write_num++] = response;
     if(controller->response_write_num >= controller->responses_len) controller->response_write_num = 0;
+    return 0;
 }
 
 static void expand_response_size(torc_response* response) {
@@ -49,19 +56,28 @@ static void expand_response_size(torc_response* response) {
     response->buf_len = size;
 }
 
+// adds line length to response
+static void add_line_len(torc_response* response, size_t length) {
+    if(response->lines >= response->line_buf_len) { // expand line buffer
+        size_t size = response->line_buf_len * 2;
+        response->line_lens = realloc(response->line_lens, size * sizeof(size_t));
+        response->line_buf_len = size;
+    }
+    response->line_lens[response->lines++] = length;
+}
+
 static void* socket_listener(void* controller_ptr) {
     torc* controller = (torc*) controller_ptr;
+    struct timeval timeout = { 0, 50000 };
 
     int n;
-    int line_pos = 0;
+    size_t line_pos = 0;
     torc_response* curr_response = NULL;
     while(controller->alive) { // loop while controller is active
         // check if socket can be read using select, if not continue
         fd_set fd;
         FD_ZERO(&fd);
         FD_SET(controller->socket, &fd);
-        struct timeval timeout;
-        timeout.tv_usec = 50 * 1000;
         n = select(controller->socket + 1, &fd, NULL, NULL, &timeout);
         if(n == -1) break;
         else if(n == 0) continue;
@@ -81,17 +97,21 @@ static void* socket_listener(void* controller_ptr) {
         // find / verify there is a response
         if(curr_response == NULL) curr_response = pop_awaiting_response(controller);
 
+        // TODO: parse '+' line extensions
         // loop over data, add to response, and look for new line character
         if(curr_response != NULL) {
             for(int i = 0; i < read; i++) {
                 if(curr_response == NULL) break; // if there is no longer a response to fulfill, break
 
+                // amount of bytes written to data
+                size_t size = curr_response->curr - curr_response->data;
+
                 // make sure there is enough room in data buffer to write. if not, reallocate space
-                if(i >= curr_response->buf_len) expand_response_size(curr_response);
+                if(size >= curr_response->buf_len) expand_response_size(curr_response);
 
                 // write to data buffer
                 char c = buf[i];
-                *(curr_response->curr++) = c;
+                if(c != '\r') *(curr_response->curr++) = c;
 
                 // if the 4th character of the line is a space (' '), then it is the last line.
                 // it will be a dash ('-') if there is another line after
@@ -108,24 +128,38 @@ static void* socket_listener(void* controller_ptr) {
 
                     // read remainder of line
                     while((c = buf[i+1]) != '\n') {
-                        if(i >= curr_response->buf_len) expand_response_size(curr_response);
+                        if(size >= curr_response->buf_len) expand_response_size(curr_response);
                         *(curr_response->curr++) = c;
+                        if(c != '\r') {
+                            line_pos++;
+                            size++;
+                        }
                         i++;
                     }
+                    i++; // skip last return
+                    line_pos++; // +1 character for char we read at pos 3
+                    add_line_len(curr_response, line_pos);
+                    line_pos = 0;
 
                     // set length of data
                     curr_response->len = curr_response->data - curr_response->curr;
 
                     // null end the data
-                    if(i >= curr_response->buf_len) expand_response_size(curr_response);
+                    if(size >= curr_response->buf_len) expand_response_size(curr_response);
                     *(curr_response->curr) = 0; // dont increment cursor bc NULL isn't actually part of the data
+
+                    // reset cursor
+                    curr_response->curr = curr_response->data;
 
                     // pop next response
                     curr_response = pop_awaiting_response(controller);
+                    continue;
                 }
 
-                if(c == '\n') line_pos = 0;
-                else line_pos++;
+                if(c == '\n') {
+                    if(curr_response != NULL) add_line_len(curr_response, line_pos);
+                    line_pos = 0;
+                } else if(c != '\r') line_pos++; // skip \r
             }
         }/* else {
             // if we get here, this isn't a response to a command, but an asynchronous message from the server
@@ -148,8 +182,12 @@ int torc_connect_controller(torc* controller, torc_info info) {
     controller->info = info;
 
     // create response list with default length of 10
-    controller->responses = malloc(sizeof(torc_response*) * 10);
     controller->responses_len = 10;
+    controller->responses = calloc(controller->responses_len, sizeof(torc_response*));
+    if(controller->responses == NULL) {
+        perror("[TORC] FAILED TO ALLOCATE RESPONSE BUFFER");
+        return 1;
+    }
     controller->response_read_num = 0;
     controller->response_write_num = 0;
 
@@ -179,11 +217,16 @@ int torc_connect_controller(torc* controller, torc_info info) {
 }
 
 void torc_close_controller(torc* controller) {
+    // send quit to server and kill immediately
+    torc_command quit_command;
+    torc_create_command(&quit_command, TORC_QUIT, 0);
+    torc_send_command_async(controller, &quit_command);
+
     // kill and join listener thread
     controller->alive = false;
     pthread_join(controller->listen_thread, NULL);
 
-    // free response list
+    torc_free_command(&quit_command);
     free(controller->responses);
 
     // close socket
@@ -195,10 +238,33 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     command->param_len = param_len;
     command->curr_param = 0;
     command->response.received = false;
+
+    command->response.lines = 0;
+    command->response.line_buf_len = 4; // default line buffer size of 4;
+    command->response.line_lens = calloc(command->response.line_buf_len, sizeof(size_t));
+    if(command->response.line_lens == NULL) {
+        perror("[TORC] FAILED TO ALLOCATE LINE LEN BUFFER");
+        return 1;
+    }
+
     command->response.buf_len = 64; // default response buffer size of 64
-    command->response.data = malloc(command->response.buf_len * sizeof(char));
+    command->response.data = calloc(command->response.buf_len, sizeof(char));
+    if(command->response.data == NULL) {
+        free(command->response.line_lens);
+        perror("[TORC] FAILED TO ALLOCATE RESPONSE BUFFER");
+        return 1;
+    }
     command->response.curr = command->response.data;
-    if(param_len > 0) command->params = malloc(sizeof(char*) * param_len);
+
+    if(param_len > 0) {
+        command->params = calloc(param_len, sizeof(char*));
+        if(command->params == NULL) {
+            free(command->response.line_lens);
+            free(command->response.data);
+            perror("[TORC] FAILED TO ALLOCATE PARAMETER BUFFER");
+            return 1;
+        }
+    }
     return 0;
 }
 
@@ -246,7 +312,10 @@ int torc_send_command_async(torc* controller, torc_command* command) {
 
     // send compiled command over socket, then add to response pool
     send(controller->socket, compiled, command->compiled_len, 0);
-    push_awaiting_response(controller, &command->response);
+    if(push_awaiting_response(controller, &command->response) != 0) {
+        perror("[TORC] FAILED TO PUSH RESPONSE TO BUFFER");
+        return 1;
+    }
 
     free(compiled); // make sure to free compiled
     return 0;
@@ -254,11 +323,64 @@ int torc_send_command_async(torc* controller, torc_command* command) {
 
 int torc_send_command(torc* controller, torc_command* command) {
     if(torc_send_command_async(controller, command) != 0) return 1;
-    while(!command->response.received);
+    while(!command->response.received); // TODO: ADD TIMEOUT FOR RESPONSE
     return 0;
 }
 
 void torc_free_command(torc_command* command) {
     if(command->param_len > 0) free(command->params);
     free(command->response.data);
+    free(command->response.line_lens);
+}
+
+// returns the starting point of the line in the data buffer
+char* torc_get_line(torc_response* response, int line) {
+    char* pos = response->data + line; // the amount of returns between the lines are = to the line number (trust me, i swear)
+    for(int i = 0; i < line; i++) {
+        pos += response->line_lens[i];
+    }
+    return pos;
+}
+
+void torc_print_line(torc_response* response, int line) {
+    char* p = torc_get_line(response, line);
+    for(int i = 0; i < response->line_lens[line]; i++) {
+        printf("%c", *(p++));
+    }
+}
+
+bool torc_auto_authenticate(torc* controller) {
+    return false;
+}
+
+bool torc_cookie_authenticate(torc* controller) {
+    return false;
+}
+
+bool torc_safe_cookie_authenticate(torc* controller) {
+    return false;
+}
+
+bool torc_password_authenticate(torc* controller, char* password) {
+    // quote password
+    size_t size = strlen(password) + 3;
+    char* quoted = malloc(size);
+    *quoted = '"';
+    memcpy(quoted + 1, password, size - 3);
+    *(quoted + size - 2) = '"';
+    *(quoted + size - 1) = 0;
+
+    // send command
+    torc_command command;
+    torc_create_command(&command, TORC_AUTHENTICATE, 1);
+    torc_add_option(&command, quoted);
+    torc_send_command(controller, &command);
+
+    bool authenticated = command.response.ok;
+
+    // free
+    torc_free_command(&command);
+    free(quoted);
+
+    return authenticated;
 }
