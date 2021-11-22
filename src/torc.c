@@ -152,7 +152,7 @@ int torc_connect_controller(torc* controller, torc_info info) {
     // bind socket to port and server address
     struct sockaddr_in servaddr;
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    servaddr.sin_addr.s_addr = inet_addr(info.addr);
     servaddr.sin_port = htons(info.port);
     if((connect(controller->socket, (struct sockaddr*) &servaddr, sizeof(servaddr))) != 0) {
         perror("[TORC] FAILED TO ESTABLISH SOCKET CONNECTION");
