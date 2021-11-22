@@ -42,29 +42,18 @@ static void push_awaiting_response(torc* controller, torc_response* response) {
     if(controller->response_write_num >= controller->responses_len) controller->response_write_num = 0;
 }
 
-static bool is_reply_end(const char* data, const char* curr) {
-    size_t size = curr - data;
-    return size >= 8 &&
-           *(curr-1) == '\n' &&
-           *(curr-2) == '\r' &&
-           *(curr-3) == 'K' &&
-           *(curr-4) == 'O' &&
-           *(curr-5) == ' ' &&
-           *(curr-6) == '0' &&
-           *(curr-7) == '5' &&
-           (*(curr-8) == '2' || *(curr-8) == '6');
-}
-
-static bool is_bad_status_code(const char code[3]) {
-    return !(code[0] == '2' || code[0] == '6') || code[1] != '5' || code[2] != '0';
+static void expand_response_size(torc_response* response) {
+    size_t size = response->buf_len * 2;
+    response->data = realloc(response->data, size);
+    response->curr = response->data + response->buf_len;
+    response->buf_len = size;
 }
 
 static void* socket_listener(void* controller_ptr) {
     torc* controller = (torc*) controller_ptr;
 
     int n;
-    int offset = 0;
-    char curr_status_code[3];
+    int line_pos = 0;
     torc_response* curr_response = NULL;
     while(controller->alive) { // loop while controller is active
         // check if socket can be read using select, if not continue
@@ -97,24 +86,46 @@ static void* socket_listener(void* controller_ptr) {
             for(int i = 0; i < read; i++) {
                 if(curr_response == NULL) break; // if there is no longer a response to fulfill, break
 
+                // make sure there is enough room in data buffer to write. if not, reallocate space
+                if(i >= curr_response->buf_len) expand_response_size(curr_response);
+
+                // write to data buffer
                 char c = buf[i];
                 *(curr_response->curr++) = c;
 
-                if(offset < 3) curr_status_code[offset] = c;
-                if(is_reply_end(curr_response->data, curr_response->curr)|| (offset == 2 && is_bad_status_code(curr_status_code))) {
-                    // TODO: FINISH READING ERROR MESSAGE ON BAD STATUS CODE
-                    // mark response as received and find next response
+                // if the 4th character of the line is a space (' '), then it is the last line.
+                // it will be a dash ('-') if there is another line after
+                if(line_pos == 3 && c == ' ') {
+                    // mark response as received and read status code
                     curr_response->received = true;
+                    curr_response->code[0] = *(curr_response->curr-4);
+                    curr_response->code[1] = *(curr_response->curr-3);
+                    curr_response->code[2] = *(curr_response->curr-2);
+                    curr_response->error = curr_response->curr;
+                    curr_response->ok = (curr_response->code[0] == '2' || curr_response->code[0] == '6') &&
+                                        curr_response->code[1] == '5' &&
+                                        curr_response->code[2] == '0';
+
+                    // read remainder of line
+                    while((c = buf[i+1]) != '\n') {
+                        if(i >= curr_response->buf_len) expand_response_size(curr_response);
+                        *(curr_response->curr++) = c;
+                        i++;
+                    }
+
+                    // set length of data
+                    curr_response->len = curr_response->data - curr_response->curr;
+
+                    // null end the data
+                    if(i >= curr_response->buf_len) expand_response_size(curr_response);
+                    *(curr_response->curr) = 0; // dont increment cursor bc NULL isn't actually part of the data
+
+                    // pop next response
                     curr_response = pop_awaiting_response(controller);
-                } else if(i >= curr_response->len) { // expand response data if needed
-                    int size = curr_response->len * 2;
-                    curr_response->data = realloc(curr_response->data, size);
-                    curr_response->curr = curr_response->data + curr_response->len + 1;
-                    curr_response->len = size;
                 }
 
-                if(c == '\n') offset = 0;
-                else offset++;
+                if(c == '\n') line_pos = 0;
+                else line_pos++;
             }
         }/* else {
             // if we get here, this isn't a response to a command, but an asynchronous message from the server
@@ -184,8 +195,8 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     command->param_len = param_len;
     command->curr_param = 0;
     command->response.received = false;
-    command->response.len = 64; // default response size of 64
-    command->response.data = malloc(command->response.len * sizeof(char));
+    command->response.buf_len = 64; // default response buffer size of 64
+    command->response.data = malloc(command->response.buf_len * sizeof(char));
     command->response.curr = command->response.data;
     if(param_len > 0) command->params = malloc(sizeof(char*) * param_len);
     return 0;
@@ -250,12 +261,4 @@ int torc_send_command(torc* controller, torc_command* command) {
 void torc_free_command(torc_command* command) {
     if(command->param_len > 0) free(command->params);
     free(command->response.data);
-}
-
-char* torc_read_raw_response(torc_response* response) {
-    size_t len = response->curr - response->data;
-    char* raw = malloc(len + 1);
-    memcpy(raw, response->data, len);
-    raw[len] = 0;
-    return raw;
 }

@@ -20,19 +20,20 @@ int main() {
         printf("FAILED TO CONNECT TOR CONTROLLER!");
         return 1;
     }
+    //controller.debug = true;
     printf("TORC controller connected\n\n");
 
     // controller authentication
     torc_command command;
     torc_create_command(&command, TORC_AUTHENTICATE, 0);
     torc_send_command(&controller, &command);
-    printf("AUTHENTICATE:\n%s\n", torc_read_raw_response(&command.response));
+    printf("AUTHENTICATE: %c%c%c %s\n", command.response.code[0], command.response.code[1], command.response.code[2], command.response.error);
     torc_free_command(&command);
 
     // check controller connection
     torc_create_command(&command, TORC_PROTOCOLINFO, 0);
     torc_send_command(&controller, &command);
-    printf("PROTOCOLINFO:\n%s\n", torc_read_raw_response(&command.response));
+    printf("PROTOCOLINFO: %c%c%c %s\n", command.response.code[0], command.response.code[1], command.response.code[2], command.response.error);
     torc_free_command(&command);
 
     // try to add onion service for webserver
@@ -41,7 +42,7 @@ int main() {
     torc_add_option(&command, "NEW:BEST");
     torc_add_option(&command, "PORT=80,8000");
     torc_send_command(&controller, &command);
-    printf("ADD_ONION:\n%s\n", torc_read_raw_response(&command.response));
+    printf("\nADD_ONION:\n%s\n", command.response.data);
     torc_free_command(&command);
 
     // setup mongoose to listen on addr

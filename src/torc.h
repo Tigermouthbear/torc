@@ -51,9 +51,12 @@ typedef struct {
 typedef struct {
     bool received;
     bool ok;
+    char code[3];
+    char* error; // the final error message (OK if no error)
+    size_t len;
     char* data;
     char* curr;
-    int len;
+    size_t buf_len; // length of data buffer, not actual length of data
 } torc_response;
 
 typedef struct {
@@ -88,8 +91,6 @@ char* torc_compile_command(torc_command* command);
 int torc_send_command_async(torc* controller, torc_command* command);
 int torc_send_command(torc* controller, torc_command* command);
 void torc_free_command(torc_command* command);
-
-char* torc_read_raw_response(torc_response* response);
 
 #ifdef __cplusplus
 }
