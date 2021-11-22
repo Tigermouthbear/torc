@@ -15,9 +15,8 @@ static void routing(struct mg_connection *c, int event, void *ev_data, void *fn_
 
 int main() {
     // create tor controller
-    torc_info controller_info = { 9051 };
     torc controller;
-    if(torc_connect_debug_controller(&controller, controller_info) != 0) {
+    if(torc_connect_controller(&controller, torc_default_addr_info()) != 0) {
         printf("FAILED TO CONNECT TOR CONTROLLER!");
         return 1;
     }
@@ -27,11 +26,13 @@ int main() {
     torc_command command;
     torc_create_command(&command, TORC_AUTHENTICATE, 0);
     torc_send_command(&controller, &command);
+    printf("AUTHENTICATE:\n%s\n", torc_read_raw_response(&command.response));
     torc_free_command(&command);
 
     // check controller connection
     torc_create_command(&command, TORC_PROTOCOLINFO, 0);
     torc_send_command(&controller, &command);
+    printf("PROTOCOLINFO:\n%s\n", torc_read_raw_response(&command.response));
     torc_free_command(&command);
 
     // try to add onion service for webserver
@@ -40,6 +41,7 @@ int main() {
     torc_add_option(&command, "NEW:BEST");
     torc_add_option(&command, "PORT=80,8000");
     torc_send_command(&controller, &command);
+    printf("ADD_ONION:\n%s\n", torc_read_raw_response(&command.response));
     torc_free_command(&command);
 
     // setup mongoose to listen on addr

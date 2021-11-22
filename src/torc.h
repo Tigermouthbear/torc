@@ -44,36 +44,52 @@ extern "C" {
 #endif
 
 typedef struct {
+    char* addr;
     int port;
-    char* secret;
 } torc_info;
 
 typedef struct {
-    torc_info* info;
-    int socket;
-    pthread_t listen_thread;
-    bool alive;
-    bool debug;
-} torc;
-
-int torc_connect_controller(torc* controller, torc_info info);
-int torc_connect_debug_controller(torc* controller, torc_info info);
-void torc_close_controller(torc* controller);
+    bool received;
+    bool ok;
+    char* data;
+    char* curr;
+    int len;
+} torc_response;
 
 typedef struct {
     char* keyword;
     char** params;
     int param_len;
     int curr_param;
-    int compiled_size;
+    unsigned long compiled_len;
+    torc_response response;
 } torc_command;
+
+typedef struct {
+    torc_info info;
+    int socket;
+    pthread_t listen_thread;
+    bool alive;
+    bool debug;
+    torc_response** responses;
+    int responses_len;
+    int response_write_num;
+    int response_read_num;
+} torc;
+
+torc_info torc_default_addr_info();
+int torc_connect_controller(torc* controller, torc_info info);
+void torc_close_controller(torc* controller);
 
 int torc_create_command(torc_command* command, char* keyword, int param_len);
 int torc_add_option(torc_command* command, char* option);
 char* torc_compile_command(torc_command* command);
-void torc_send_str(torc* controller, char* data);
+
+int torc_send_command_async(torc* controller, torc_command* command);
 int torc_send_command(torc* controller, torc_command* command);
 void torc_free_command(torc_command* command);
+
+char* torc_read_raw_response(torc_response* response);
 
 #ifdef __cplusplus
 }
