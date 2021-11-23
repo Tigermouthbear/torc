@@ -49,29 +49,39 @@ static int push_awaiting_response(torc* controller, torc_response* response) {
     return 0;
 }
 
-static void expand_response_size(torc_response* response) {
+static int expand_response_size(torc_response* response) {
     size_t size = response->buf_len * 2;
     response->data = realloc(response->data, size);
+    if(response->data == NULL) {
+        perror("FAILED TO REALLOCATE RESPONSE DATA");
+        return 1;
+    }
     response->curr = response->data + response->buf_len;
     response->buf_len = size;
+    return 0;
 }
 
 // adds line length to response
-static void add_line_len(torc_response* response, size_t length) {
+static int add_line_len(torc_response* response, size_t length) {
     if(response->lines >= response->line_buf_len) { // expand line buffer
         size_t size = response->line_buf_len * 2;
-        response->line_lens = realloc(response->line_lens, size * sizeof(size_t));
+        response->line_lens = realloc(response->line_lens, size * sizeof(unsigned int*));
+        if(response->line_lens == NULL) {
+            perror("[TORC] FAILED TO REALLOCATE LINE LENGTH BUFFER");
+            return 1;
+        }
         response->line_buf_len = size;
     }
     response->line_lens[response->lines++] = length;
+    return 0;
 }
 
 static void* socket_listener(void* controller_ptr) {
     torc* controller = (torc*) controller_ptr;
-    struct timeval timeout = { 0, 50000 };
+    struct timeval timeout = { 0, 100000 };
 
     int n;
-    size_t line_pos = 0;
+    unsigned int line_pos = 0;
     torc_response* curr_response = NULL;
     while(controller->alive) { // loop while controller is active
         // check if socket can be read using select, if not continue
@@ -107,7 +117,12 @@ static void* socket_listener(void* controller_ptr) {
                 size_t size = curr_response->curr - curr_response->data;
 
                 // make sure there is enough room in data buffer to write. if not, reallocate space
-                if(size >= curr_response->buf_len) expand_response_size(curr_response);
+                if(size >= curr_response->buf_len) {
+                    if(expand_response_size(curr_response) != 0) {
+                        perror("FAILED TO EXPAND RESPONSE SIZE");
+                        // TODO: ADD BREAKPOINT FOR THIS ERROR
+                    }
+                }
 
                 // write to data buffer
                 char c = buf[i];
@@ -128,7 +143,12 @@ static void* socket_listener(void* controller_ptr) {
 
                     // read remainder of line
                     while((c = buf[i+1]) != '\n') {
-                        if(size >= curr_response->buf_len) expand_response_size(curr_response);
+                        if(size >= curr_response->buf_len) {
+                            if(expand_response_size(curr_response) != 0) {
+                                perror("[TORC] FAILED TO EXPAND RESPONSE BUFFER");
+                                // TODO: ADD BREAKPOINT FOR THIS ERROR
+                            }
+                        }
                         *(curr_response->curr++) = c;
                         if(c != '\r') {
                             line_pos++;
@@ -138,14 +158,22 @@ static void* socket_listener(void* controller_ptr) {
                     }
                     i++; // skip last return
                     line_pos++; // +1 character for char we read at pos 3
-                    add_line_len(curr_response, line_pos);
+                    if(add_line_len(curr_response, line_pos) != 0) {
+                        perror("[TORC] FAILED TO ADD LINE LENGTH");
+                        // TODO: ADD BREAKPOINT FOR THIS ERROR
+                    }
                     line_pos = 0;
 
                     // set length of data
                     curr_response->len = curr_response->data - curr_response->curr;
 
                     // null end the data
-                    if(size >= curr_response->buf_len) expand_response_size(curr_response);
+                    if(size >= curr_response->buf_len) {
+                        if(expand_response_size(curr_response) != 0) {
+                            perror("[TORC] FAILED TO EXPAND RESPONSE BUFFER");
+                            // TODO: ADD BREAKPOINT FOR THIS ERROR
+                        }
+                    }
                     *(curr_response->curr) = 0; // dont increment cursor bc NULL isn't actually part of the data
 
                     // reset cursor
@@ -157,7 +185,12 @@ static void* socket_listener(void* controller_ptr) {
                 }
 
                 if(c == '\n') {
-                    if(curr_response != NULL) add_line_len(curr_response, line_pos);
+                    if(curr_response != NULL) {
+                        if(add_line_len(curr_response, line_pos) != 0) {
+                            perror("[TORC] FAILED TO ADD LINE LENGTH");
+                            // TODO: ADD BREAKPOINT FOR THIS ERROR
+                        }
+                    }
                     line_pos = 0;
                 } else if(c != '\r') line_pos++; // skip \r
             }
@@ -173,7 +206,7 @@ static void* socket_listener(void* controller_ptr) {
     return 0;
 }
 
-torc_info torc_default_addr_info() {
+torc_info torc_default_addr_info(void) {
     torc_info info = { "127.0.0.1", 9051 };
     return info;
 }
@@ -237,11 +270,11 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     command->keyword = keyword;
     command->param_len = param_len;
     command->curr_param = 0;
-    command->response.received = false;
 
+    command->response.received = false;
     command->response.lines = 0;
     command->response.line_buf_len = 4; // default line buffer size of 4;
-    command->response.line_lens = calloc(command->response.line_buf_len, sizeof(size_t));
+    command->response.line_lens = calloc(command->response.line_buf_len, sizeof(unsigned int));
     if(command->response.line_lens == NULL) {
         perror("[TORC] FAILED TO ALLOCATE LINE LEN BUFFER");
         return 1;
@@ -256,11 +289,22 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     }
     command->response.curr = command->response.data;
 
+    command->response.key_vals_len = 4;
+    command->response.key_vals = calloc(command->response.key_vals_len, sizeof(torc_key_value*));
+    if(command->response.key_vals == NULL) {
+        free(command->response.line_lens);
+        free(command->response.data);
+        perror("[TORC] FAILED TO ALLOCATE KEY_VALUE BUFFER");
+        return 1;
+    }
+    command->response.key_vals_num = 0;
+
     if(param_len > 0) {
-        command->params = calloc(param_len, sizeof(char*));
+        command->params = calloc((size_t) param_len, sizeof(char*));
         if(command->params == NULL) {
             free(command->response.line_lens);
             free(command->response.data);
+            free(command->response.key_vals);
             perror("[TORC] FAILED TO ALLOCATE PARAMETER BUFFER");
             return 1;
         }
@@ -327,22 +371,92 @@ int torc_send_command(torc* controller, torc_command* command) {
     return 0;
 }
 
+static void torc_free_key_value(torc_key_value* key_value) {
+    free(key_value->key);
+    free(key_value->value);
+    free(key_value);
+}
+
 void torc_free_command(torc_command* command) {
     if(command->param_len > 0) free(command->params);
     free(command->response.data);
     free(command->response.line_lens);
+    for(int i = 0; i < command->response.key_vals_num; i++) torc_free_key_value(command->response.key_vals[i]);
+    free(command->response.key_vals);
 }
 
 // returns the starting point of the line in the data buffer
-char* torc_get_line(torc_response* response, int line) {
+char* torc_get_line(torc_response* response, size_t line) {
     char* pos = response->data + line; // the amount of returns between the lines are = to the line number (trust me, i swear)
     for(int i = 0; i < line; i++) {
         pos += response->line_lens[i];
     }
+    pos += 4; // skip the status code at the beginning of the line
     return pos;
 }
 
-void torc_print_line(torc_response* response, int line) {
+static torc_key_value* torc_get_key_value(char* start, size_t len, bool dquote /*whether to remove dquotes*/) {
+    char* curr = start;
+    torc_key_value* key_value = malloc(sizeof(torc_key_value));
+    if(key_value == NULL) {
+        perror("[TORC] FAILED TO ALLOCATE KEY_VALUE");
+        return NULL;
+    }
+
+    key_value->key = calloc(len, sizeof(char));
+    char* p = key_value->key;
+    if(dquote) len--;
+    while(curr < start + len - 4) { // -4 for skipping status code at the beginning of the line
+        if(*curr == '=') {
+            key_value->value = calloc(len + start - curr + 1, sizeof(char)); // +1 for null ending string
+            *p = 0; // null end key
+            p = key_value->value;
+            curr++;
+            if(dquote) curr++;
+        } else *(p++) = *(curr++);
+    }
+    *p = 0; // null end value
+
+    return key_value;
+}
+
+static int torc_add_key_value_to_response(torc_response* response, torc_key_value* key_value) {
+    if(response->key_vals_num >= response->key_vals_len) { // expand line buffer
+        size_t size = response->key_vals_len * 2;
+        response->key_vals = realloc(response->key_vals, size * sizeof(torc_key_value*));
+        if(response->key_vals == NULL) {
+            perror("[TORC] FAILED TO REALLOCATE KEY_VALUE BUFFER");
+            return 1;
+        }
+        response->key_vals_len = size;
+    }
+    response->key_vals[response->key_vals_num++] = key_value;
+    return 0;
+}
+
+// key value freed when command response is freed
+static torc_key_value* torc_get_key_value_from_line_optional_dquote(torc_response* response, size_t line, bool dquote) {
+    torc_key_value* key_value = torc_get_key_value(torc_get_line(response, line), response->line_lens[line], dquote);
+    if(key_value == NULL) {
+        perror("[TORC] FAILED TO GET KEY_VALUE FROM LINE");
+        return NULL;
+    }
+    if(torc_add_key_value_to_response(response, key_value) != 0) {
+        perror("[TORC] FAILED TO ADD KEY_VALUE TO RESPONSE");
+        // non fatal error
+    }
+    return key_value;
+}
+
+torc_key_value* torc_get_key_value_from_line(torc_response* response, size_t line) {
+    return torc_get_key_value_from_line_optional_dquote(response, line, false);
+}
+
+torc_key_value* torc_get_key_value_from_line_dquote(torc_response* response, size_t line) {
+    return torc_get_key_value_from_line_optional_dquote(response, line, true);
+}
+
+void torc_print_line(torc_response* response, size_t line) {
     char* p = torc_get_line(response, line);
     for(int i = 0; i < response->line_lens[line]; i++) {
         printf("%c", *(p++));

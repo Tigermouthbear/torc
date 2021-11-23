@@ -1,4 +1,5 @@
 #include "../src/torc.h"
+#include "../src/torcmds.h"
 #include "mongoose.h"
 
 static int s_signo;
@@ -36,9 +37,8 @@ int main() {
 
     // check controller connection
     torc_command command;
-    torc_create_command(&command, TORC_PROTOCOLINFO, 0);
-    torc_send_command(&controller, &command);
-    printf("PROTOCOLINFO: %c%c%c %s\n", command.response.code[0], command.response.code[1], command.response.code[2], command.response.error);
+    torc_protocol_info_response protocol_info_response = torc_send_protocol_info_command(&controller, &command);
+    printf("TOR VERSION: %s\n", protocol_info_response.version);
     torc_free_command(&command);
 
     // try to add onion service for webserver
@@ -47,7 +47,11 @@ int main() {
     torc_add_option(&command, "NEW:BEST");
     torc_add_option(&command, "PORT=80,8000");
     torc_send_command(&controller, &command);
-    printf("\nADD_ONION:\n%s\n\n", command.response.data);
+
+    // add_onion command wrapper not added yet... thisll work for now
+    torc_key_value* key_value = torc_get_key_value_from_line(&command.response, 0);
+    printf("ONION URL: http://%s.onion/\n\n", key_value->value);
+
     torc_free_command(&command);
 
     // setup mongoose to listen on addr

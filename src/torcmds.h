@@ -1,11 +1,12 @@
 #ifndef TORC_TORCMDS_H
 #define TORC_TORCMDS_H
 
+#include "torc.h"
+
 #define TORC_SETCONF "SETCONF"
 #define TORC_RESETCONF "RESETCONF"
 #define TORC_GETCONF "GETCONF"
 #define TORC_SETEVENTS "SETEVENTS"
-#define TORC_AUTHENTICATE "AUTHENTICATE"
 #define TORC_SAVECONF "SAVECONF"
 #define TORC_SIGNAL "SIGNAL"
 #define TORC_MAPADDRESS "MAPADDRESS"
@@ -18,7 +19,6 @@
 #define TORC_REDIRECTSTREAM "REDIRECTSTREAM"
 #define TORC_CLOSESTREAM "CLOSESTREAM"
 #define TORC_CLOSECIRCUIT "CLOSECIRCUIT"
-#define TORC_QUIT "QUIT"
 #define TORC_USEFEATURE "USEFEATURE"
 #define TORC_RESOLVE "RESOLVE"
 #define TORC_PROTOCOLINFO "PROTOCOLINFO"
@@ -42,6 +42,15 @@ extern "C" {
 
 // AUTHENTICATE and QUIT command handled in torc.h
 // the rest of the commands will be implemented here
+
+// TODO: PROTOCOLINFO VERSION PARSING (not important)
+typedef struct {
+    char* version;
+    char* auth_methods;
+    char* cookie_file;
+} torc_protocol_info_response;
+
+torc_protocol_info_response torc_send_protocol_info_command(torc* controller, torc_command* command);
 
 #ifdef __cplusplus
 }
