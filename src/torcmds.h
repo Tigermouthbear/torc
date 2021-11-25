@@ -46,9 +46,14 @@ extern "C" {
 // the rest of the commands will be implemented here
 
 // IMPLEMENTATION OF PROTOCOLINFO
+// TORC_FLAGS_NONE means no auth
+#define TORC_FLAGS_HASHEDPASSWORD 1
+#define TORC_FLAGS_COOKIE 2
+#define TORC_FLAGS_SAFECOOKIE 4
 typedef struct {
+    bool sent; // whether the command was successfully sent, users SHOULD check this to make sure the command went through
     char* version;
-    char* auth_methods;
+    int auth_methods;
     char* cookie_file;
 } torc_protocol_info_response;
 torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_command* command);
@@ -59,11 +64,12 @@ torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_comman
 #define TORC_FLAGS_V3AUTH 4
 #define TORC_FLAGS_NONANONYMOUS 8
 typedef struct {
+    bool sent;
     char* service_id;
     char* private_key;
 } torc_add_onion_response;
 torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags);
-torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags); // TODO: THIS
+torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags); // TODO: THIS, ALSO ADD V3 ONION PK GENERATION
 
 #ifdef __cplusplus
 }

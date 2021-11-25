@@ -38,12 +38,14 @@ int main() {
     // check controller connection
     torc_command command;
     torc_protocol_info_response protocol_info_response = torc_get_protocol_info(&controller, &command);
-    printf("TOR VERSION: %s\n", protocol_info_response.version);
+    if(protocol_info_response.sent) printf("TOR VERSION: %s\n", protocol_info_response.version);
+    else printf("FAILED TO SEND PROTOCOLINFO COMMAND\n");
     torc_free_command(&command);
 
-    // add onion service for webserver
-    torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_NONE);
-    printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
+    // add temporary onion service for webserver
+    torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_DISCARD_PK);
+    if(add_onion_response.sent) printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
+    else printf("FAILED TO SEND ADD_ONION COMMAND\n\n");
     torc_free_command(&command);
 
     // setup mongoose to listen on addr
