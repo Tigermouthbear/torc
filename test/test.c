@@ -37,21 +37,13 @@ int main() {
 
     // check controller connection
     torc_command command;
-    torc_protocol_info_response protocol_info_response = torc_send_protocol_info_command(&controller, &command);
+    torc_protocol_info_response protocol_info_response = torc_get_protocol_info(&controller, &command);
     printf("TOR VERSION: %s\n", protocol_info_response.version);
     torc_free_command(&command);
 
-    // try to add onion service for webserver
-    // the onion url is the ServiceID response + .onion
-    torc_create_command(&command, TORC_ADD_ONION, 2);
-    torc_add_option(&command, "NEW:BEST");
-    torc_add_option(&command, "PORT=80,8000");
-    torc_send_command(&controller, &command);
-
-    // add_onion command wrapper not added yet... thisll work for now
-    torc_key_value* key_value = torc_get_key_value_from_line(&command.response, 0);
-    printf("ONION URL: http://%s.onion/\n\n", key_value->value);
-
+    // add onion service for webserver
+    torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_NONE);
+    printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
     torc_free_command(&command);
 
     // setup mongoose to listen on addr

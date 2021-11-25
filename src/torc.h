@@ -4,6 +4,9 @@
 #include <stdbool.h>
 #include <pthread.h>
 
+#define TORC_TYPE_KEY_VALUE 0
+#define TORC_TYPE_VALUE 1
+
 #define TORC_AUTHENTICATE "AUTHENTICATE"
 #define TORC_QUIT "QUIT"
 
@@ -17,9 +20,10 @@ typedef struct {
 } torc_info;
 
 typedef struct {
-    char* key;
+    int type; // types: TYPE_KEY_VALUE and TYPE_VALUE
+    char* key; // only present when TYPE is TYPE_KEY_VALUE
     char* value;
-} torc_key_value;
+} torc_value;
 
 typedef struct {
     bool received;
@@ -36,9 +40,9 @@ typedef struct {
     unsigned int* line_lens; // characters of each line
     size_t line_buf_len; // length of line lenght buffer
 
-    unsigned int key_vals_len;
-    torc_key_value** key_vals;
-    unsigned int key_vals_num;
+    unsigned int values_len;
+    torc_value** values;
+    unsigned int values_num;
 } torc_response;
 
 typedef struct {
@@ -77,10 +81,8 @@ int torc_send_command_async(torc* controller, torc_command* command);
 int torc_send_command(torc* controller, torc_command* command);
 void torc_free_command(torc_command* command);
 
-char* torc_get_line(torc_response* response, size_t line);
-torc_key_value* torc_get_key_value_from_line(torc_response* response, size_t line);
-torc_key_value* torc_get_key_value_from_line_dquote(torc_response* response, size_t line);
-void torc_print_line(torc_response* response, size_t line); // debug function
+char* torc_get_line_start(torc_response* response, size_t line);
+void torc_print_line(torc_response* response, size_t line);
 
 // 'auto' authenticates with cookie, safe cookie, or none if possible
 // all authentication functions return false on fail

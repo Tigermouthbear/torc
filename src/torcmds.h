@@ -36,6 +36,8 @@
 #define TORC_DROPOWNERSHIP "DROPOWNERSHIP"
 #define TORC_DROPTIMEOUTS "DROPTIMEOUTS"
 
+#define TORC_FLAGS_NONE 0
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -43,14 +45,25 @@ extern "C" {
 // AUTHENTICATE and QUIT command handled in torc.h
 // the rest of the commands will be implemented here
 
-// TODO: PROTOCOLINFO VERSION PARSING (not important)
+// IMPLEMENTATION OF PROTOCOLINFO
 typedef struct {
     char* version;
     char* auth_methods;
     char* cookie_file;
 } torc_protocol_info_response;
+torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_command* command);
 
-torc_protocol_info_response torc_send_protocol_info_command(torc* controller, torc_command* command);
+// IMPLEMENTATION OF ADD_ONION
+#define TORC_FLAGS_DISCARD_PK 1
+#define TORC_FLAGS_DETACH 2
+#define TORC_FLAGS_V3AUTH 4
+#define TORC_FLAGS_NONANONYMOUS 8
+typedef struct {
+    char* service_id;
+    char* private_key;
+} torc_add_onion_response;
+torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags);
+torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags); // TODO: THIS
 
 #ifdef __cplusplus
 }
