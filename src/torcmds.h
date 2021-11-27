@@ -42,7 +42,7 @@
 extern "C" {
 #endif
 
-// AUTHENTICATE and QUIT command handled in torc.h
+// QUIT command handled in torc.h
 // the rest of the commands will be implemented here
 
 // IMPLEMENTATION OF PROTOCOLINFO
@@ -57,6 +57,22 @@ typedef struct {
     char* cookie_file;
 } torc_protocol_info_response;
 torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_command* command);
+
+// IMPLEMENTATION OF AUTHCHALLENGE
+typedef struct {
+    bool sent;
+    char* server_hash;
+    char* server_nonce;
+} torc_authchallenge_response;
+torc_authchallenge_response torc_authchallenge(torc* controller, torc_command* command, char* nonce);
+
+// IMPLEMENTATION OF AUTHENTICATE
+// 'auto' authenticates with password, cookie, safe cookie, or none if possible
+// all authentication functions return false on fail
+bool torc_auto_authenticate(torc* controller, char* password); // password is optional, only used if tor is in HASHEDPASSWORD authentication mode
+bool torc_cookie_authenticate(torc* controller);
+bool torc_safe_cookie_authenticate(torc* controller);
+bool torc_password_authenticate(torc* controller, char* password);
 
 // IMPLEMENTATION OF ADD_ONION
 #define TORC_FLAGS_DISCARD_PK 1

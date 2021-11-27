@@ -84,14 +84,6 @@ void torc_free_command(torc_command* command);
 char* torc_get_line_start(torc_response* response, size_t line);
 void torc_print_line(torc_response* response, size_t line);
 
-// 'auto' authenticates with cookie, safe cookie, or none if possible
-// all authentication functions return false on fail
-// TODO: FINISH COOKIE AND AUTO AUTHENTICATION
-bool torc_auto_authenticate(torc* controller);
-bool torc_cookie_authenticate(torc* controller);
-bool torc_safe_cookie_authenticate(torc* controller);
-bool torc_password_authenticate(torc* controller, char* password);
-
 #ifdef __cplusplus
 }
 #endif

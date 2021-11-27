@@ -21,15 +21,14 @@ int main() {
     // create tor controller
     torc controller;
     if(torc_connect_controller(&controller, torc_default_addr_info()) != 0) {
-        printf("FAILED TO CONNECT TOR CONTROLLER!");
+        printf("FAILED TO CONNECT TOR CONTROLLER!\n");
         return 1;
     }
-    //controller.debug = true;
     printf("TORC controller connected\n");
 
     // authenticate controller
-    if(!torc_password_authenticate(&controller, "my_password")) {
-        printf("FAILED TO AUTHENTICATE TOR CONTROLLER!");
+    if(!torc_auto_authenticate(&controller, NULL)) { // password arg can be set to NULL if cookie auth used
+        printf("FAILED TO AUTHENTICATE TOR CONTROLLER!\n");
         torc_close_controller(&controller);
         return 1;
     }
@@ -38,14 +37,16 @@ int main() {
     // check controller connection
     torc_command command;
     torc_protocol_info_response protocol_info_response = torc_get_protocol_info(&controller, &command);
-    if(protocol_info_response.sent) printf("TOR VERSION: %s\n", protocol_info_response.version);
-    else printf("FAILED TO SEND PROTOCOLINFO COMMAND\n");
+    if(protocol_info_response.sent && command.response.ok && protocol_info_response.version != NULL) {
+        printf("TOR VERSION: %s\n", protocol_info_response.version);
+    } else printf("FAILED TO SEND PROTOCOLINFO COMMAND\n");
     torc_free_command(&command);
 
     // add temporary onion service for webserver
     torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_DISCARD_PK);
-    if(add_onion_response.sent) printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
-    else printf("FAILED TO SEND ADD_ONION COMMAND\n\n");
+    if(add_onion_response.sent && command.response.ok && add_onion_response.service_id != NULL) {
+        printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
+    } else printf("FAILED TO SEND ADD_ONION COMMAND\n\n");
     torc_free_command(&command);
 
     // setup mongoose to listen on addr

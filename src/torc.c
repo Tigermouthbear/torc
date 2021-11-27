@@ -140,10 +140,10 @@ static void* socket_listener(void* controller_ptr) {
         // find / verify there is a response
         if(curr_response == NULL) curr_response = pop_awaiting_response(controller);
 
-        // TODO: parse '+' line extensions and dqoutes
+        // TODO: parse '+' line extensions
         // loop over data, add to response, and look for new line character
         if(curr_response != NULL) {
-            for(int i = 0; i < read; i++) {
+            for(int i = 0; i < read; i++) { // TODO: WE MIGHT NOT HAVE READ WHOLE LINE FROM SOCKET
                 if(curr_response == NULL) break; // if there is no longer a response to fulfill, break
 
                 // amount of bytes written to data
@@ -158,8 +158,6 @@ static void* socket_listener(void* controller_ptr) {
                     }
                 }
 
-                // if the 4th character of the line is a space (' '), then it is the last line.
-                // it will be a dash ('-') if there is another line after
                 if(line_pos == 3) {
                     // if the 4th character of the line is a space (' '), then it is the last line.
                     // it will be a dash ('-') if there is another line after
@@ -216,14 +214,23 @@ static void* socket_listener(void* controller_ptr) {
                     } else { // this is a response value line
                         int value_type = TORC_TYPE_VALUE;
                         size_t value_size = 0;
+                        bool dquoted = false;
+                        bool first = true;
                         while((c = buf[++i]) != LINE_FEED) {
                             // write key to response value if '=' is found
-                            if(c == '=') {
+                            if(c == '=' && first) {
                                 value_type = TORC_TYPE_KEY_VALUE;
                                 curr_value->key = malloc(value_size + 1); // valgrind says this is not freed, but it is freed in torc_free_value
                                 memcpy(curr_value->key, curr_response->curr - value_size, value_size);
                                 curr_value->key[value_size] = 0;
                                 value_size = -1; // -1 to skip '=' sign
+                                first = false;
+
+                                // check if value is dquoted. if yes, skip it
+                                if(buf[i + 1] == '"') {
+                                    value_size = -2;
+                                    dquoted = true;
+                                }
                             }
 
                             // write data to buffer
@@ -247,7 +254,8 @@ static void* socket_listener(void* controller_ptr) {
 
                         // add value to response value
                         curr_value->value = malloc(value_size + 1);
-                        memcpy(curr_value->value, curr_response->curr - value_size, value_size);
+                        size_t to_read = dquoted ? value_size - 1 : value_size;
+                        memcpy(curr_value->value, curr_response->curr - value_size, to_read);
                         curr_value->value[value_size] = 0;
 
                         // set response value type
@@ -506,39 +514,3 @@ void torc_print_line(torc_response* response, size_t line) {
     }
 }
 
-bool torc_auto_authenticate(torc* controller) {
-    return false;
-}
-
-bool torc_cookie_authenticate(torc* controller) {
-    return false;
-}
-
-bool torc_safe_cookie_authenticate(torc* controller) {
-    return false;
-}
-
-// ERROR CHECK THESE COMMANDS
-bool torc_password_authenticate(torc* controller, char* password) {
-    // quote password
-    size_t size = strlen(password) + 3;
-    char* quoted = malloc(size);
-    *quoted = '"';
-    memcpy(quoted + 1, password, size - 3);
-    *(quoted + size - 2) = '"';
-    *(quoted + size - 1) = 0;
-
-    // send command
-    torc_command command;
-    torc_create_command(&command, TORC_AUTHENTICATE, 1);
-    torc_add_option(&command, quoted);
-    torc_send_command(controller, &command);
-
-    bool authenticated = command.response.ok;
-
-    // free
-    torc_free_command(&command);
-    free(quoted);
-
-    return authenticated;
-}
