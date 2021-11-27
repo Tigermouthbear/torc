@@ -7,7 +7,6 @@
 #define TORC_TYPE_KEY_VALUE 0
 #define TORC_TYPE_VALUE 1
 
-#define TORC_AUTHENTICATE "AUTHENTICATE"
 #define TORC_QUIT "QUIT"
 
 #ifdef __cplusplus

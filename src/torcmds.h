@@ -3,6 +3,7 @@
 
 #include "torc.h"
 
+#define TORC_AUTHENTICATE "AUTHENTICATE"
 #define TORC_SETCONF "SETCONF"
 #define TORC_RESETCONF "RESETCONF"
 #define TORC_GETCONF "GETCONF"
