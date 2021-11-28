@@ -27,7 +27,7 @@ int main() {
     printf("TORC controller connected\n");
 
     // authenticate controller
-    if(!torc_auto_authenticate(&controller, NULL)) { // password arg can be set to NULL if cookie auth used
+    if(!torc_authenticate(&controller, NULL)) { // password arg can be set to NULL if cookie auth used
         printf("FAILED TO AUTHENTICATE TOR CONTROLLER!\n");
         torc_close_controller(&controller);
         return 1;

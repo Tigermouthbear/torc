@@ -114,6 +114,10 @@ static char* concat(char* prefix, char* suffix) {
 static char* dquote(char* string) {
     size_t size = strlen(string) + 3;
     char* quoted = malloc(size);
+    if(quoted == NULL) {
+        perror("[TORC] FAILED TO QUOTE STRING");
+        return NULL;
+    }
     *quoted = '"';
     memcpy(quoted + 1, string, size - 3);
     *(quoted + size - 2) = '"';
@@ -123,7 +127,7 @@ static char* dquote(char* string) {
 
 static bool contains(char* string, char c) {
     char* p = string;
-    while(p != NULL) {
+    while(*p != 0) {
         if(*p == c) return true;
         p++;
     }
@@ -496,7 +500,7 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
     return authenticated;
 }
 
-bool torc_auto_authenticate(torc* controller, char* password) {
+bool torc_authenticate(torc* controller, char* password) {
     // get protocol info
     torc_command command;
     torc_protocol_info_response protocol_info = torc_get_protocol_info(controller, &command);
@@ -551,6 +555,10 @@ bool torc_safe_cookie_authenticate(torc* controller) {
 bool torc_password_authenticate(torc* controller, char* password) {
     // quote password
     char* quoted = dquote(password);
+    if(quoted == NULL) {
+        perror("[TORC] FAILED TO AUTHENTICATE WITH PASSWORD");
+        return false;
+    }
 
     // send command
     torc_command command;

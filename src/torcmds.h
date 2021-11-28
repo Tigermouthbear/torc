@@ -70,7 +70,7 @@ torc_authchallenge_response torc_authchallenge(torc* controller, torc_command* c
 // IMPLEMENTATION OF AUTHENTICATE
 // 'auto' authenticates with password, cookie, safe cookie, or none if possible
 // all authentication functions return false on fail
-bool torc_auto_authenticate(torc* controller, char* password); // password is optional, only used if tor is in HASHEDPASSWORD authentication mode
+bool torc_authenticate(torc* controller, char* password); // password is optional, only used if tor is in HASHEDPASSWORD authentication mode
 bool torc_cookie_authenticate(torc* controller);
 bool torc_safe_cookie_authenticate(torc* controller);
 bool torc_password_authenticate(torc* controller, char* password);
