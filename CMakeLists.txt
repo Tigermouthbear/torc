@@ -9,5 +9,5 @@ find_package(OpenSSL REQUIRED)
 add_library(torc src/torc.c src/torc.h src/torcmds.c src/torcmds.h)
 target_link_libraries(torc Threads::Threads OpenSSL::Crypto)
 
-add_executable(test test/test.c test/mongoose.c test/mongoose.h)
-target_link_libraries(test torc)
+add_executable(torc_test test/test.c test/mongoose.c test/mongoose.h)
+target_link_libraries(torc_test torc)
