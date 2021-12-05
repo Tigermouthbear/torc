@@ -43,7 +43,7 @@ int main() {
     torc_free_command(&command);
 
     // add temporary onion service for webserver
-    torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_DISCARD_PK);
+    torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_DISCARD_PK, 0);
     if(add_onion_response.sent && command.response.ok && add_onion_response.service_id != NULL) {
         printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
     } else printf("FAILED TO SEND ADD_ONION COMMAND\n\n");
