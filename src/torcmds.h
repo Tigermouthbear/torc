@@ -85,8 +85,31 @@ typedef struct {
     char* service_id;
     char* private_key;
 } torc_add_onion_response;
-torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags);
-torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags); // TODO: THIS, ALSO ADD V3 ONION PK GENERATION
+torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags, int auth_num, ...);
+// TODO: THIS, ALSO ADD V3 ONION PK GENERATION
+torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags, int auth_num, ...);
+
+// IMPLEMENTATION OF DEL_ONION
+bool torc_del_onion(torc* controller, torc_command* command, char* service_id);
+
+// IMPLEMENTATION OF SIGNAL
+#define TORC_SIGNAL_RELOAD "RELOAD"
+#define TORC_SIGNAL_SHUTDOWN "SHUTDOWN"
+#define TORC_SIGNAL_DUMP "DUMP"
+#define TORC_SIGNAL_DEBUG "DEBUG"
+#define TORC_SIGNAL_HALT "HALT"
+#define TORC_SIGNAL_CLEARDNSCACHE "CLEARDNSCACHE"
+#define TORC_SIGNAL_NEWNYM "NEWNYM"
+#define TORC_SIGNAL_HEARTBEAT "HEARTBEAT"
+#define TORC_SIGNAL_DORMANT "DORMANT"
+#define TORC_SIGNAL_ACTIVE "ACTIVE"
+bool torc_send_signal(torc* controller, torc_command* command, const char* signal);
+
+// IMPLEMENTATION OF TAKEOWNERSHIP
+bool torc_take_ownership(torc* controller, torc_command* command);
+
+// IMPLEMENTATION OF DROPOWNERSHIP
+bool torc_drop_ownership(torc* controller, torc_command* command);
 
 #ifdef __cplusplus
 }

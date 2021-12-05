@@ -586,9 +586,19 @@ bool torc_password_authenticate(torc* controller, char* password) {
     return authenticated;
 }
 
-torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags) {
+torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags, int auth_num, ...) {
     torc_add_onion_response response = { false };
-    if(torc_create_command(command, TORC_ADD_ONION, flags != TORC_FLAGS_NONE ? 3 : 2) != 0) {
+
+    // copy client auths(var args) to array
+    const char* auth_keys[auth_num];
+    va_list args;
+    va_start(args, auth_num);
+    for(int i = 0; i < auth_num; i++) {
+        auth_keys[i] = va_arg(args, char*);
+    }
+    va_end(args);
+
+    if(torc_create_command(command, TORC_ADD_ONION, (flags != TORC_FLAGS_NONE ? 3 : 2) + auth_num) != 0) {
         perror("[TORC] FAILED TO CREATE ADD NEW ONION COMMAND");
         return response;
     }
@@ -604,8 +614,27 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
         return response;
     }
     if(torc_add_option(command, port_target) != 0) {
+        free(port_target);
         perror("[TORC] FAILED TO ADD PORT OPTION TO ADD NEW ONION COMMAND");
         return response;
+    }
+
+    // add client auths
+    char* client_auths[auth_num];
+    for(int i = 0; i < auth_num; i++) {
+        char* auth = concat("ClientAuthV3=", client_auths[i]);
+        if(auth == NULL) {
+            free(port_target);
+            for(int j = 0; j < i; j++) free(client_auths[j]);
+            perror("[TORC] FAILED TO ADD PORT OPTION TO ADD NEW ONION COMMAND");
+            return response;
+        }
+        if(torc_add_option(command, auth) != 0) {
+            free(port_target);
+            for(int j = 0; j < i; j++) free(client_auths[j]);
+            perror("[TORC] FAILED TO ADD CLIENT AUTH OPTION TO ADD NEW ONION COMMAND");
+            return response;
+        }
     }
 
     // add flags to command
@@ -615,12 +644,16 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
         flag_str = concat("Flags=", flag_list);
         if(flag_str == NULL) {
             free(port_target);
+            for(int i = 0; i < auth_num; i++) free(client_auths[i]);
             perror("[TORC] FAILED TO ALLOCATE MEM FOR FLAG OPTION IN ADD NEW ONION COMMAND");
             return response;
         }
         free(flag_list);
 
         if(torc_add_option(command, flag_str) != 0) {
+            free(port_target);
+            for(int i = 0; i < auth_num; i++) free(client_auths[i]);
+            free(flag_str);
             perror("[TORC] FAILED TO ADD FLAG OPTION TO ADD NEW ONION COMMAND");
             return response;
         }
@@ -628,11 +661,15 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
 
     // send command
     if(torc_send_command(controller, command) != 0) {
+        free(port_target);
+        for(int i = 0; i < auth_num; i++) free(client_auths[i]);
+        if(flags != TORC_FLAGS_NONE) free(flag_str);
         perror("[TORC] FAILED TO SEND ADD NEW ONION COMMAND");
         return response;
     }
     response.sent = true;
     free(port_target);
+    for(int i = 0; i < auth_num; i++) free(client_auths[i]);
     if(flags != TORC_FLAGS_NONE) free(flag_str);
 
     // read response
@@ -649,4 +686,60 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
     }
 
     return response;
+}
+
+bool torc_del_onion(torc* controller, torc_command* command, char* service_id) {
+    if(torc_create_command(command, TORC_DEL_ONION, 1) != 0) {
+        perror("[TORC] FAILED TO CREATE DEL ONION COMMAND");
+        return false;
+    }
+    if(torc_add_option(command, service_id) != 0) {
+        perror("[TORC] FAILED TO ADD OPTION TO DEL ONION COMMAND");
+        return false;
+    }
+    if(torc_send_command(controller, command) != 0) {
+        perror("[TORC] FAILED TO SEND DEL ONION COMMAND");
+        return false;
+    }
+    return command->response.ok;
+}
+
+bool torc_send_signal(torc* controller, torc_command* command, const char* signal) {
+    if(torc_create_command(command, TORC_SIGNAL, 1) != 0) {
+        perror("[TORC] FAILED TO CREATE SIGNAL COMMAND");
+        return false;
+    }
+    if(torc_add_option(command, (char*) signal) != 0) {
+        perror("[TORC] FAILED TO ADD OPTION TO SIGNAL COMMAND");
+        return false;
+    }
+    if(torc_send_command(controller, command) != 0) {
+        perror("[TORC] FAILED TO SEND SIGNAL COMMAND");
+        return false;
+    }
+    return command->response.ok;
+}
+
+bool torc_take_ownership(torc* controller, torc_command* command) {
+    if(torc_create_command(command, TORC_TAKEOWNERSHIP, 0) != 0) {
+        perror("[TORC] FAILED TO CREATE TAKEOWNERSHIP COMMAND");
+        return false;
+    }
+    if(torc_send_command(controller, command) != 0) {
+        perror("[TORC] FAILED TO SEND TAKEOWNERSHIP COMMAND");
+        return false;
+    }
+    return command->response.ok;
+}
+
+bool torc_drop_ownership(torc* controller, torc_command* command) {
+    if(torc_create_command(command, TORC_DROPOWNERSHIP, 0) != 0) {
+        perror("[TORC] FAILED TO CREATE DROPOWNERSHIP COMMAND");
+        return false;
+    }
+    if(torc_send_command(controller, command) != 0) {
+        perror("[TORC] FAILED TO SEND DROPOWNERSHIP COMMAND");
+        return false;
+    }
+    return command->response.ok;
 }
