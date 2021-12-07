@@ -250,7 +250,9 @@ static void* socket_listener(void* controller_ptr) {
 
                         // set response to recieved
                         // it is important to do this at the end, after the response data has been written.
+                        pthread_mutex_lock(&curr_response->lock);
                         curr_response->received = true;
+                        pthread_mutex_unlock(&curr_response->lock);
 
                         // pop next response
                         curr_response = pop_awaiting_response(controller);
@@ -318,7 +320,6 @@ static void* socket_listener(void* controller_ptr) {
                         // stop reading line
                         mode = MODE_SCANNING;
                     }
-
                 }
             }
         }/* else {
@@ -403,6 +404,12 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     command->keyword = keyword;
     command->param_len = param_len;
     command->curr_param = 0;
+
+    // create response lock
+    if(pthread_mutex_init(&command->response.lock, NULL) != 0) {
+        perror("[TORC] FAILED TO INITIALIZE RESPONSE MUTEX LOCK");
+        return 1;
+    }
 
     command->response.received = false;
     command->response.lines = 0;
@@ -496,7 +503,7 @@ int torc_send_command_async(torc* controller, torc_command* command) {
         return 1; // failed to compile command
     }
 
-    // send compiled command over socket, then add to response pool
+    // add to response pool, then send compiled command over socket
     if(push_awaiting_response(controller, &command->response) != 0) {
         perror("[TORC] FAILED TO PUSH RESPONSE TO BUFFER");
         return 1;
@@ -507,9 +514,19 @@ int torc_send_command_async(torc* controller, torc_command* command) {
     return 0;
 }
 
+// threadsafe function to wait until response is received
+void torc_wait_for_response(torc_command* command) {
+    bool received = false;
+    while(!received) {  // TODO: ADD TIMEOUT FOR RESPONSE
+        pthread_mutex_lock(&command->response.lock);
+        received = command->response.received;
+        pthread_mutex_unlock(&command->response.lock);
+    }
+}
+
 int torc_send_command(torc* controller, torc_command* command) {
     if(torc_send_command_async(controller, command) != 0) return 1;
-    while(!command->response.received); // TODO: ADD TIMEOUT FOR RESPONSE
+    torc_wait_for_response(command);
     return 0;
 }
 
@@ -525,6 +542,7 @@ void torc_free_command(torc_command* command) {
     free(command->response.line_lens);
     for(int i = 0; i < command->response.values_num; i++) torc_free_value(command->response.values[i]);
     free(command->response.values);
+    pthread_mutex_destroy(&command->response.lock);
 }
 
 // returns the starting point of the line in the data buffer

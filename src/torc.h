@@ -25,6 +25,7 @@ typedef struct {
 } torc_value;
 
 typedef struct {
+    pthread_mutex_t lock; // lock to prevent mulit thread variable errors
     bool received;
     bool ok;
     char code[3];
@@ -77,6 +78,7 @@ int torc_add_option(torc_command* command, char* option);
 char* torc_compile_command(torc_command* command);
 
 int torc_send_command_async(torc* controller, torc_command* command);
+void torc_wait_for_response(torc_command* command);
 int torc_send_command(torc* controller, torc_command* command);
 void torc_free_command(torc_command* command);
 
