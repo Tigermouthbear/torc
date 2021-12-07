@@ -105,6 +105,10 @@ static int add_value_to_response(torc_response* response, torc_value* key_value)
     return 0;
 }
 
+
+#define MODE_SCANNING 0
+#define MODE_FINAL_SCAN 1
+#define MODE_VALUE_SCAN 2
 static void* socket_listener(void* controller_ptr) {
     torc* controller = (torc*) controller_ptr;
     struct timeval timeout = { 0, 10000 };
@@ -112,13 +116,22 @@ static void* socket_listener(void* controller_ptr) {
     // this means that the maximum shutdown time should be around 10 ms
 
     int n;
-    unsigned int line_pos = 0;
     torc_response* curr_response = NULL;
     torc_value* curr_value = calloc(1, sizeof(torc_value));
     if(curr_value == NULL) {
         perror("[TORC] FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
         goto socket_error;
     }
+
+    // variables for all scanning modes
+    int mode = MODE_SCANNING;
+    unsigned int line_pos = 0;
+
+    // variables for value scanning mode
+    int value_type;
+    size_t value_size;
+    bool first;
+
     while(controller->alive) { // loop while controller is active
         // check if socket can be read using select, if not continue
         fd_set fd;
@@ -143,46 +156,77 @@ static void* socket_listener(void* controller_ptr) {
         // TODO: parse '+' line extensions
         // loop over data, add to response, and look for new line character
         if(curr_response != NULL) {
-            for(int i = 0; i < read; i++) { // TODO: WE MIGHT NOT HAVE READ WHOLE LINE FROM SOCKET
-                if(curr_response == NULL) break; // if there is no longer a response to fulfill, break
+            for(int i = 0; i < read; i++) {
+                if(curr_response == NULL) {
+                    mode = MODE_SCANNING;
+                    break; // if there is no longer a response to fulfill, break
+                }
 
                 // amount of bytes written to data
                 size_t size = curr_response->curr - curr_response->data;
 
-                // write to data buffer
                 char c = buf[i];
-                if(c != CARRIAGE_RETURN) {
-                    if(write_to_response_data(curr_response, &size, c) != 0) {
-                        perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
-                        goto socket_error;
+                if(mode == MODE_SCANNING) {
+                    // write to data buffer
+                    if(c != CARRIAGE_RETURN) {
+                        if(write_to_response_data(curr_response, &size, c) != 0) {
+                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            goto socket_error;
+                        }
                     }
-                }
 
-                if(line_pos == 3) {
-                    // if the 4th character of the line is a space (' '), then it is the last line.
-                    // it will be a dash ('-') if there is another line after
-                    if(c == ' ') {
-                        // read status code
-                        curr_response->code[0] = *(curr_response->curr-4);
-                        curr_response->code[1] = *(curr_response->curr-3);
-                        curr_response->code[2] = *(curr_response->curr-2);
-                        curr_response->error = curr_response->curr;
-                        curr_response->ok = (curr_response->code[0] == '2' || curr_response->code[0] == '6') &&
-                                            curr_response->code[1] == '5' &&
-                                            curr_response->code[2] == '0';
+                    // once we get to the 4th char, we know what type of line it is
+                    if(line_pos == 3) {
+                        line_pos++;
 
-                        // read remainder of line
-                        while((c = buf[++i]) != LINE_FEED) {
-                            if(c != CARRIAGE_RETURN) {
-                                if(write_to_response_data(curr_response, &size, c) != 0) {
-                                    perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
-                                    goto socket_error;
-                                }
-                                line_pos++;
+                        // if the 4th character of the line is a space (' '), then it is the last line.
+                        // it will be a dash ('-') if there is another line after
+                        if(c == ' ') {
+                            // read status code
+                            curr_response->code[0] = *(curr_response->curr-4);
+                            curr_response->code[1] = *(curr_response->curr-3);
+                            curr_response->code[2] = *(curr_response->curr-2);
+                            curr_response->error = curr_response->curr;
+                            curr_response->ok = (curr_response->code[0] == '2' || curr_response->code[0] == '6') &&
+                                                curr_response->code[1] == '5' &&
+                                                curr_response->code[2] == '0';
+
+                            // we then need to read the remainder of the final line
+                            mode = MODE_FINAL_SCAN;
+                            continue;
+                        } else { // this is a response value line
+                            value_type = TORC_TYPE_VALUE;
+                            value_size = 0;
+                            first = true;
+                            mode = MODE_VALUE_SCAN;
+                            continue;
+                        }
+                    }
+
+                    // should only have LINE_FEED here if line length is less than 4
+                    // this handles this cleanly, even though its not in
+                    // the control port spec
+                    if(c == LINE_FEED) {
+                        if(curr_response != NULL) {
+                            if(add_line_len(curr_response, line_pos) != 0) {
+                                perror("[TORC] FAILED TO ADD LINE LENGTH");
+                                goto socket_error;
                             }
                         }
-                        //i++; // skip last return
-                        line_pos++; // +1 character for char we read at pos 3
+                        line_pos = 0;
+                    } else if(c != CARRIAGE_RETURN) line_pos++; // skip \r
+                } else if(mode == MODE_FINAL_SCAN) {
+                    if(c != CARRIAGE_RETURN && c != LINE_FEED) {
+                        if(write_to_response_data(curr_response, &size, c) != 0) {
+                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            goto socket_error;
+                        }
+                        line_pos++;
+                    }
+
+                    // end of final line
+                    if(c == LINE_FEED) {
+                        // save length of line
                         if(add_line_len(curr_response, line_pos) != 0) {
                             perror("[TORC] FAILED TO ADD LINE LENGTH");
                             goto socket_error;
@@ -199,7 +243,7 @@ static void* socket_listener(void* controller_ptr) {
                                 goto socket_error;
                             }
                         }
-                        *curr_response->curr = 0; // dont increment cursor bc NULL isn't actually part of the data
+                        *curr_response->curr = 0;
 
                         // reset cursor
                         curr_response->curr = curr_response->data;
@@ -210,40 +254,35 @@ static void* socket_listener(void* controller_ptr) {
 
                         // pop next response
                         curr_response = pop_awaiting_response(controller);
-                        continue;
-                    } else { // this is a response value line
-                        int value_type = TORC_TYPE_VALUE;
-                        size_t value_size = 0;
-                        bool dquoted = false;
-                        bool first = true;
-                        while((c = buf[++i]) != LINE_FEED) {
-                            // write key to response value if '=' is found
-                            if(c == '=' && first) {
-                                value_type = TORC_TYPE_KEY_VALUE;
-                                curr_value->key = malloc(value_size + 1); // valgrind says this is not freed, but it is freed in torc_free_value
-                                memcpy(curr_value->key, curr_response->curr - value_size, value_size);
-                                curr_value->key[value_size] = 0;
-                                value_size = -1; // -1 to skip '=' sign
-                                first = false;
 
-                                // check if value is dquoted. if yes, skip it
-                                if(buf[i + 1] == '"') {
-                                    value_size = -2;
-                                    dquoted = true;
-                                }
-                            }
+                        // stop reading final line
+                        mode = MODE_SCANNING;
+                    }
+                } else if(mode == MODE_VALUE_SCAN) { // reading value line
+                    // checks if this value is a key-value pair
+                    // (write data as key to response value if '=' is found)
+                    if(c == '=' && first) {
+                        value_type = TORC_TYPE_KEY_VALUE;
+                        curr_value->key = malloc(value_size + 1); // valgrind says this is not freed, but it is freed in torc_free_value
+                        memcpy(curr_value->key, curr_response->curr - value_size, value_size);
+                        curr_value->key[value_size] = 0;
+                        value_size = -1; // -1 to skip '=' sign on memcpy later
+                        first = false;
+                    }
 
-                            // write data to buffer
-                            if(c != CARRIAGE_RETURN) {
-                                if(write_to_response_data(curr_response, &size, c) != 0) {
-                                    perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
-                                    goto socket_error;
-                                }
-                                line_pos++;
-                                value_size++;
-                            }
+                    // write character to response buffer
+                    // this way the raw data is also available
+                    if(c != CARRIAGE_RETURN && c != LINE_FEED) {
+                        if(write_to_response_data(curr_response, &size, c) != 0) {
+                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            goto socket_error;
                         }
+                        line_pos++;
+                        value_size++;
+                    }
 
+                    // end of the value line
+                    if(c == LINE_FEED) {
                         // write line length
                         line_pos++; // +1 character for char we read at pos 3
                         if(add_line_len(curr_response, line_pos) != 0) {
@@ -254,8 +293,7 @@ static void* socket_listener(void* controller_ptr) {
 
                         // add value to response value
                         curr_value->value = malloc(value_size + 1);
-                        size_t to_read = dquoted ? value_size - 1 : value_size;
-                        memcpy(curr_value->value, curr_response->curr - value_size, to_read);
+                        memcpy(curr_value->value, curr_response->curr - value_size, value_size);
                         curr_value->value[value_size] = 0;
 
                         // set response value type
@@ -277,19 +315,11 @@ static void* socket_listener(void* controller_ptr) {
                             goto socket_error;
                         }
 
-                        continue;
+                        // stop reading line
+                        mode = MODE_SCANNING;
                     }
-                }
 
-                if(c == LINE_FEED) {
-                    if(curr_response != NULL) {
-                        if(add_line_len(curr_response, line_pos) != 0) {
-                            perror("[TORC] FAILED TO ADD LINE LENGTH");
-                            goto socket_error;
-                        }
-                    }
-                    line_pos = 0;
-                } else if(c != CARRIAGE_RETURN) line_pos++; // skip \r
+                }
             }
         }/* else {
             // if we get here, this isn't a response to a command, but an asynchronous message from the server
@@ -467,11 +497,11 @@ int torc_send_command_async(torc* controller, torc_command* command) {
     }
 
     // send compiled command over socket, then add to response pool
-    send(controller->socket, compiled, command->compiled_len, 0);
     if(push_awaiting_response(controller, &command->response) != 0) {
         perror("[TORC] FAILED TO PUSH RESPONSE TO BUFFER");
         return 1;
     }
+    send(controller->socket, compiled, command->compiled_len, 0);
 
     free(compiled); // make sure to free compiled
     return 0;

@@ -125,6 +125,13 @@ static char* dquote(char* string) {
     return quoted;
 }
 
+static char* remove_dquote(char* string) {
+    size_t size = strlen(string);
+    memmove(string, string + 1, size);
+    string[size - 2] = 0;
+    return string;
+}
+
 static bool contains(char* string, char c) {
     char* p = string;
     while(*p != 0) {
@@ -182,7 +189,7 @@ torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_comman
         torc_value* value = command->response.values[i];
         if(value->type == TORC_TYPE_KEY_VALUE) {
             if(strcmp(value->key, "VERSION Tor") == 0) {
-                response.version = value->value;
+                response.version = remove_dquote(value->value);
             } else if(strcmp(value->key, "AUTH METHODS") == 0) { // COOKIEFILE MIGHT BE AFTER FLAGS
                 if(contains(value->value, ' ')) { // parse cookiefile flag
                     // read flags
