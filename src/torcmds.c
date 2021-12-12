@@ -1,8 +1,8 @@
 #include "torcmds.h"
 
-#include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdarg.h>
 #include <openssl/hmac.h>
 

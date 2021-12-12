@@ -1,9 +1,11 @@
 #include "torc.h"
 
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/socket.h>
-#include <netdb.h>
-#include <libnet.h>
+#include <arpa/inet.h>
+#include <unistd.h>
 
 #define CARRIAGE_RETURN 13
 #define LINE_FEED 10
