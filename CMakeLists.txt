@@ -5,12 +5,9 @@ set(CMAKE_C_STANDARD 99)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 
 set(TORC_BUILD_TYPE "static" CACHE STRING "The type of library to create: static, object, or shared (default static).")
-set(TORC_FIND_OPENSSL ON CACHE BOOL "Whether cmake should find the openssl package (the open OpenSSL::Crypto alias must be set if this is OFF).")
 
 find_package(Threads REQUIRED)
-if(${TORC_FIND_OPENSSL})
-    find_package(OpenSSL REQUIRED)
-endif()
+find_package(OpenSSL) # is REQUIRED, but set to not so that it can be added by root projects (used for android)
 
 add_library(torc-object OBJECT src/torc.c src/torc.h src/torcmds.c src/torcmds.h)
 target_link_libraries(torc-object Threads::Threads OpenSSL::Crypto)
