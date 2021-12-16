@@ -14,6 +14,7 @@ extern "C" {
 #endif
 
 typedef struct {
+    bool nix; // whether this is using a unix socket or a regular socket connection
     char* addr;
     int port;
 } torc_info;
@@ -70,6 +71,7 @@ typedef struct {
 } torc;
 
 torc_info torc_default_addr_info(void);
+torc_info torc_create_unix_info(const char* location);
 int torc_connect_controller(torc* controller, torc_info info);
 void torc_close_controller(torc* controller);
 

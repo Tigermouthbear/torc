@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #define CARRIAGE_RETURN 13
@@ -343,7 +344,12 @@ static void* socket_listener(void* controller_ptr) {
 }
 
 torc_info torc_default_addr_info(void) {
-    torc_info info = { "127.0.0.1", 9051 };
+    torc_info info = { false, "127.0.0.1", 9051 };
+    return info;
+}
+
+torc_info torc_create_unix_info(const char* location) {
+    torc_info info = { true, (char*) location, -1 };
     return info;
 }
 
@@ -360,28 +366,44 @@ int torc_connect_controller(torc* controller, torc_info info) {
     controller->response_read_num = 0;
     controller->response_write_num = 0;
 
-    // create socket stream
-    controller->socket = socket(AF_INET, SOCK_STREAM, 0);
+    // create socket
+    controller->socket = socket(info.nix ? AF_UNIX : AF_INET, SOCK_STREAM, 0);
     if(controller->socket == -1) {
         perror("[TORC] FAILED TO CREATE SOCKET CONNECTION");
         return 1;
     }
 
-    // bind socket to port and server address
-    struct sockaddr_in servaddr;
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr(info.addr);
-    servaddr.sin_port = htons(info.port);
-    if((connect(controller->socket, (struct sockaddr*) &servaddr, sizeof(servaddr))) != 0) {
+    // create socket address for either inet or unix socket
+    struct sockaddr* servaddr;
+    size_t servaddr_len;
+    if(info.nix) {
+        struct sockaddr_un sockaddr_un;
+        memset(&sockaddr_un, 0, sizeof(sockaddr_un));
+        sockaddr_un.sun_family = AF_UNIX;
+        strncpy(sockaddr_un.sun_path, info.addr, sizeof(sockaddr_un.sun_path) - 1);
+        servaddr = (struct sockaddr*) &sockaddr_un;
+        servaddr_len = sizeof(sockaddr_un);
+    } else {
+        struct sockaddr_in servaddr_in;
+        memset(&servaddr_in, 0, sizeof(servaddr_in));
+        servaddr_in.sin_family = AF_INET;
+        servaddr_in.sin_addr.s_addr = inet_addr(info.addr);
+        servaddr_in.sin_port = htons(info.port);
+        servaddr = (struct sockaddr*) &servaddr_in;
+        servaddr_len = sizeof(servaddr_in);
+    }
+
+    // connect socket
+    if((connect(controller->socket, servaddr, servaddr_len)) != 0) {
         perror("[TORC] FAILED TO ESTABLISH SOCKET CONNECTION");
         return 1;
     }
-    controller->alive = true;
-    controller->debug = false;
 
     // create listener thread
     pthread_create(&controller->listen_thread, NULL, socket_listener, controller);
 
+    controller->alive = true;
+    controller->debug = false;
     return 0;
 }
 

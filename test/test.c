@@ -20,7 +20,7 @@ static void routing(struct mg_connection *c, int event, void *ev_data, void *fn_
 int main() {
     // create tor controller
     torc controller;
-    if(torc_connect_controller(&controller, torc_default_addr_info()) != 0) {
+    if(torc_connect_controller(&controller, torc_create_unix_info("/var/lib/tor/control")) != 0) {
         printf("FAILED TO CONNECT TOR CONTROLLER!\n");
         return 1;
     }
