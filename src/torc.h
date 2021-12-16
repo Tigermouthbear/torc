@@ -9,6 +9,18 @@
 
 #define TORC_QUIT "QUIT"
 
+// dumb simple debug logging
+#include <stdio.h>
+#include <errno.h>
+extern int errno;
+#ifndef NDEBUG
+#define TORC_LOG_ERROR(...) {fprintf(stderr, "[TORC] ");fprintf(stderr, __VA_ARGS__);fprintf(stderr, ": %s\n", strerror(errno));}
+#define TORC_LOG_DEBUG(...) {fprintf(stdout, "[TORC] ");fprintf(stdout, __VA_ARGS__);}
+#else
+#define TORC_LOG_ERROR(...)
+#define TORC_LOG_DEBUG(...)
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif

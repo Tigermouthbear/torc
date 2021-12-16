@@ -1,7 +1,6 @@
 #include "torc.h"
 
 #include <stdlib.h>
-#include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -29,7 +28,7 @@ static int expand_response_buffer(torc* controller) {
     size_t prev_len = controller->responses_len;
     controller->responses = realloc(controller->responses, sizeof(torc_response*) * prev_len * 2);
     if(controller->responses == NULL) {
-        perror("[TORC] FAILED TO EXPAND REPONSE BUFFER");
+        TORC_LOG_ERROR("FAILED TO EXPAND REPONSE BUFFER");
         return 1;
     }
     controller->responses_len *= 2;
@@ -59,7 +58,7 @@ static int expand_response_size(torc_response* response) {
     size_t size = response->buf_len * 2;
     response->data = realloc(response->data, size);
     if(response->data == NULL) {
-        perror("FAILED TO REALLOCATE RESPONSE DATA");
+        TORC_LOG_ERROR("FAILED TO REALLOCATE RESPONSE DATA");
         return 1;
     }
     response->curr = response->data + response->buf_len;
@@ -70,7 +69,7 @@ static int expand_response_size(torc_response* response) {
 static int write_to_response_data(torc_response* response, size_t* size, char c) {
     if(*size >= response->buf_len) {
         if(expand_response_size(response) != 0) {
-            perror("FAILED TO EXPAND RESPONSE SIZE");
+            TORC_LOG_ERROR("FAILED TO EXPAND RESPONSE SIZE");
             return 1;
         }
     }
@@ -85,7 +84,7 @@ static int add_line_len(torc_response* response, size_t length) {
         size_t size = response->line_buf_len * 2;
         response->line_lens = realloc(response->line_lens, size * sizeof(unsigned int*));
         if(response->line_lens == NULL) {
-            perror("[TORC] FAILED TO REALLOCATE LINE LENGTH BUFFER");
+            TORC_LOG_ERROR("FAILED TO REALLOCATE LINE LENGTH BUFFER");
             return 1;
         }
         response->line_buf_len = size;
@@ -99,7 +98,7 @@ static int add_value_to_response(torc_response* response, torc_value* key_value)
         size_t size = response->values_len * 2;
         response->values = realloc(response->values, size * sizeof(torc_value*));
         if(response->values == NULL) {
-            perror("[TORC] FAILED TO REALLOCATE KEY_VALUE BUFFER");
+            TORC_LOG_ERROR("FAILED TO REALLOCATE KEY_VALUE BUFFER");
             return 1;
         }
         response->values_len = size;
@@ -122,7 +121,7 @@ static void* socket_listener(void* controller_ptr) {
     torc_response* curr_response = NULL;
     torc_value* curr_value = calloc(1, sizeof(torc_value));
     if(curr_value == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
         goto socket_error;
     }
 
@@ -143,7 +142,7 @@ static void* socket_listener(void* controller_ptr) {
         n = select(controller->socket + 1, &fd, NULL, NULL, &timeout);
         if(n == 0) continue;
         else if(n < 0) {
-            perror("[TORC] FAILED TO READ SOCKET USING SELECT");
+            TORC_LOG_ERROR("FAILED TO READ SOCKET USING SELECT");
             break;
         }
         if(!FD_ISSET(controller->socket, &fd)) break;
@@ -173,7 +172,7 @@ static void* socket_listener(void* controller_ptr) {
                     // write to data buffer
                     if(c != CARRIAGE_RETURN) {
                         if(write_to_response_data(curr_response, &size, c) != 0) {
-                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
                             goto socket_error;
                         }
                     }
@@ -212,7 +211,7 @@ static void* socket_listener(void* controller_ptr) {
                     if(c == LINE_FEED) {
                         if(curr_response != NULL) {
                             if(add_line_len(curr_response, line_pos) != 0) {
-                                perror("[TORC] FAILED TO ADD LINE LENGTH");
+                                TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
                                 goto socket_error;
                             }
                         }
@@ -221,7 +220,7 @@ static void* socket_listener(void* controller_ptr) {
                 } else if(mode == MODE_FINAL_SCAN) {
                     if(c != CARRIAGE_RETURN && c != LINE_FEED) {
                         if(write_to_response_data(curr_response, &size, c) != 0) {
-                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
                             goto socket_error;
                         }
                         line_pos++;
@@ -231,7 +230,7 @@ static void* socket_listener(void* controller_ptr) {
                     if(c == LINE_FEED) {
                         // save length of line
                         if(add_line_len(curr_response, line_pos) != 0) {
-                            perror("[TORC] FAILED TO ADD LINE LENGTH");
+                            TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
                             goto socket_error;
                         }
                         line_pos = 0;
@@ -242,7 +241,7 @@ static void* socket_listener(void* controller_ptr) {
                         // null end the data
                         if(size >= curr_response->buf_len) {
                             if(expand_response_size(curr_response) != 0) {
-                                perror("[TORC] FAILED TO EXPAND RESPONSE BUFFER");
+                                TORC_LOG_ERROR("FAILED TO EXPAND RESPONSE BUFFER");
                                 goto socket_error;
                             }
                         }
@@ -279,7 +278,7 @@ static void* socket_listener(void* controller_ptr) {
                     // this way the raw data is also available
                     if(c != CARRIAGE_RETURN && c != LINE_FEED) {
                         if(write_to_response_data(curr_response, &size, c) != 0) {
-                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
                             goto socket_error;
                         }
                         line_pos++;
@@ -291,7 +290,7 @@ static void* socket_listener(void* controller_ptr) {
                         // write line length
                         line_pos++; // +1 character for char we read at pos 3
                         if(add_line_len(curr_response, line_pos) != 0) {
-                            perror("[TORC] FAILED TO ADD LINE LENGTH");
+                            TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
                             goto socket_error;
                         }
                         line_pos = 0;
@@ -309,14 +308,14 @@ static void* socket_listener(void* controller_ptr) {
 
                         // write LINE_FEED to preserve line breaks
                         if(write_to_response_data(curr_response, &size, LINE_FEED) != 0) {
-                            perror("[TORC] FAILED TO WRITE TO RESPONSE DATA");
+                            TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
                             goto socket_error;
                         }
 
                         // allocate new value for next line/value
                         curr_value = calloc(1, sizeof(torc_value));
                         if(curr_value == NULL) {
-                            perror("[TORC] FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
+                            TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
                             goto socket_error;
                         }
 
@@ -334,7 +333,7 @@ static void* socket_listener(void* controller_ptr) {
     }
     socket_error:
     if(controller->alive) {
-        perror("[TORC] ERROR RUNNING SOCKET LISTENER");
+        TORC_LOG_ERROR("ERROR RUNNING SOCKET LISTENER");
         // TODO: shutdown controller, gracefully :)
     }
 
@@ -360,7 +359,7 @@ int torc_connect_controller(torc* controller, torc_info info) {
     controller->responses_len = 10;
     controller->responses = calloc(controller->responses_len, sizeof(torc_response*));
     if(controller->responses == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE RESPONSE BUFFER");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE BUFFER");
         return 1;
     }
     controller->response_read_num = 0;
@@ -369,7 +368,7 @@ int torc_connect_controller(torc* controller, torc_info info) {
     // create socket
     controller->socket = socket(info.nix ? AF_UNIX : AF_INET, SOCK_STREAM, 0);
     if(controller->socket == -1) {
-        perror("[TORC] FAILED TO CREATE SOCKET CONNECTION");
+        TORC_LOG_ERROR("FAILED TO CREATE SOCKET CONNECTION");
         return 1;
     }
 
@@ -395,7 +394,7 @@ int torc_connect_controller(torc* controller, torc_info info) {
 
     // connect socket
     if((connect(controller->socket, servaddr, servaddr_len)) != 0) {
-        perror("[TORC] FAILED TO ESTABLISH SOCKET CONNECTION");
+        TORC_LOG_ERROR("FAILED TO ESTABLISH SOCKET CONNECTION");
         return 1;
     }
 
@@ -431,7 +430,7 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
 
     // create response lock
     if(pthread_mutex_init(&command->response.lock, NULL) != 0) {
-        perror("[TORC] FAILED TO INITIALIZE RESPONSE MUTEX LOCK");
+        TORC_LOG_ERROR("FAILED TO INITIALIZE RESPONSE MUTEX LOCK");
         return 1;
     }
 
@@ -440,7 +439,7 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     command->response.line_buf_len = 4; // default line buffer size of 4;
     command->response.line_lens = calloc(command->response.line_buf_len, sizeof(unsigned int));
     if(command->response.line_lens == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE LINE LEN BUFFER");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE LINE LEN BUFFER");
         return 1;
     }
 
@@ -448,7 +447,7 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     command->response.data = calloc(command->response.buf_len, sizeof(char));
     if(command->response.data == NULL) {
         free(command->response.line_lens);
-        perror("[TORC] FAILED TO ALLOCATE RESPONSE BUFFER");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE BUFFER");
         return 1;
     }
     command->response.curr = command->response.data;
@@ -458,7 +457,7 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
     if(command->response.values == NULL) {
         free(command->response.line_lens);
         free(command->response.data);
-        perror("[TORC] FAILED TO ALLOCATE KEY_VALUE BUFFER");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE KEY_VALUE BUFFER");
         return 1;
     }
     command->response.values_num = 0;
@@ -469,7 +468,7 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
             free(command->response.line_lens);
             free(command->response.data);
             free(command->response.values);
-            perror("[TORC] FAILED TO ALLOCATE PARAMETER BUFFER");
+            TORC_LOG_ERROR("FAILED TO ALLOCATE PARAMETER BUFFER");
             return 1;
         }
     }
@@ -478,7 +477,7 @@ int torc_create_command(torc_command* command, char* keyword, int param_len) {
 
 int torc_add_option(torc_command* command, char* option) {
     if(command->curr_param >= command->param_len) {
-        perror("[TORC] FAILED TO ADD OPTION TO COMMAND, TOO MANY OPTIONS");
+        TORC_LOG_ERROR("FAILED TO ADD OPTION TO COMMAND, TOO MANY OPTIONS");
         return 1;
     }
     command->params[command->curr_param++] = option;
@@ -497,7 +496,7 @@ char* torc_compile_command(torc_command* command) {
     command->compiled_len = size;
     char* out = malloc(size + 1);
     if(out == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE COMMAND BUFFER");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE COMMAND BUFFER");
         return NULL;
     }
     char* curr = out;
@@ -523,13 +522,13 @@ char* torc_compile_command(torc_command* command) {
 int torc_send_command_async(torc* controller, torc_command* command) {
     char* compiled = torc_compile_command(command);
     if(compiled == NULL) {
-        perror("[TORC] FAILED TO COMPILE COMMAND");
+        TORC_LOG_ERROR("FAILED TO COMPILE COMMAND");
         return 1; // failed to compile command
     }
 
     // add to response pool, then send compiled command over socket
     if(push_awaiting_response(controller, &command->response) != 0) {
-        perror("[TORC] FAILED TO PUSH RESPONSE TO BUFFER");
+        TORC_LOG_ERROR("FAILED TO PUSH RESPONSE TO BUFFER");
         return 1;
     }
     send(controller->socket, compiled, command->compiled_len, 0);

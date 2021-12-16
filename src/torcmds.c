@@ -33,7 +33,7 @@ static char* write_flags(int flags, int num, ...) {
     char* curr = flag_str;
     first = true;
     if(flag_str == NULL) {
-        perror("[TORC] FAILED TO CREATE FLAG LIST");
+        TORC_LOG_ERROR("FAILED TO CREATE FLAG LIST");
         return NULL;
     }
     for(int i = 0; i < num; i++) {
@@ -102,7 +102,7 @@ static char* concat(char* prefix, char* suffix) {
     size_t suffix_len =  strlen(suffix);
     char* out = malloc(prefix_len + suffix_len + 1);
     if(out == NULL) {
-        perror("[TORC] FAILED TO CONCAT STRINGS");
+        TORC_LOG_ERROR("FAILED TO CONCAT STRINGS");
         return NULL;
     }
     memcpy(out, prefix, prefix_len);
@@ -115,7 +115,7 @@ static char* dquote(char* string) {
     size_t size = strlen(string) + 3;
     char* quoted = malloc(size);
     if(quoted == NULL) {
-        perror("[TORC] FAILED TO QUOTE STRING");
+        TORC_LOG_ERROR("FAILED TO QUOTE STRING");
         return NULL;
     }
     *quoted = '"';
@@ -173,11 +173,11 @@ torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_comman
     // create and send command
     torc_protocol_info_response response = { false };
     if(torc_create_command(command, TORC_PROTOCOLINFO, 0) != 0) {
-        perror("[TORC] FAILED TO CREATE PROTOCOL INFO COMMAND");
+        TORC_LOG_ERROR("FAILED TO CREATE PROTOCOL INFO COMMAND");
         return response;
     }
     if(torc_send_command(controller, command) != 0) {
-        perror("[TORC] FAILED TO SEND PROTOCOL INFO COMMAND");
+        TORC_LOG_ERROR("FAILED TO SEND PROTOCOL INFO COMMAND");
         return response;
     }
     response.sent = true;
@@ -200,7 +200,7 @@ torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_comman
                     size_t flags_size = p - value->value;
                     char* flags = malloc(flags_size + 1);
                     if(flags == NULL) {
-                        perror("[TORC] FAILED TO ALLOCATE FLAG BUFFER FOR PROTOCOL INFO RESPONSE");
+                        TORC_LOG_ERROR("FAILED TO ALLOCATE FLAG BUFFER FOR PROTOCOL INFO RESPONSE");
                         continue;
                     }
                     memcpy(flags, value->value, flags_size);
@@ -226,19 +226,19 @@ torc_protocol_info_response torc_get_protocol_info(torc* controller, torc_comman
 torc_authchallenge_response torc_authchallenge(torc* controller, torc_command* command, char* nonce) {
     torc_authchallenge_response response = { false };
     if(torc_create_command(command, TORC_AUTHCHALLENGE, 2) != 0) {
-        perror("[TORC] FAILED TO CREATE AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return response;
     }
     if(torc_add_option(command, "SAFECOOKIE") != 0) {
-        perror("[TORC] FAILED TO CREATE AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return response;
     }
     if(torc_add_option(command, nonce) != 0) {
-        perror("[TORC] FAILED TO CREATE AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return response;
     }
     if(torc_send_command(controller, command) != 0) {
-        perror("[TORC] FAILED TO SEND AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND AUTHCHALLENGE COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return response;
     }
     response.sent = true;
@@ -278,14 +278,14 @@ bool none_authenticate(torc* controller) {
 
 static char* read_cookiefile_secret(torc_protocol_info_response protocol_info) {
     if(protocol_info.cookie_file == NULL)  {
-        perror("[TORC] FAILED TO READ COOKIEFILE, COULD NOT FIND COOKIEFILE PARAMETER IN RESPONSE");
+        TORC_LOG_ERROR("FAILED TO READ COOKIEFILE, COULD NOT FIND COOKIEFILE PARAMETER IN RESPONSE");
         return NULL;
     }
 
     // open file and get length
     FILE* file = fopen(protocol_info.cookie_file, "rb"); // open in read binary mode
     if(file == NULL) {
-        perror("[TORC] FAILED TO OPEN COOKIEFILE FOR AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO OPEN COOKIEFILE FOR AUTHENTICATION");
         return NULL;
     }
     fseek(file, 0, SEEK_END); // seek to end
@@ -295,7 +295,7 @@ static char* read_cookiefile_secret(torc_protocol_info_response protocol_info) {
     // read file into byte array (+1 for null ending)
     char* bytes = malloc(length + 1);
     if(bytes == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE MEM FOR BYTES FOR COOKIEFILE READING");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR BYTES FOR COOKIEFILE READING");
         return NULL;
     }
     fread(bytes, length, 1, file);
@@ -313,7 +313,7 @@ static char* read_cookiefile_secret_hex(torc_protocol_info_response protocol_inf
     char* hex_bytes = malloc(strlen(bytes) * 2 + 1);
     if(hex_bytes == NULL) {
         free(bytes);
-        perror("[TORC] FAILED TO ALLOCATE MEM FOR HEX BYTES FOR COOKIEFILE READING");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR HEX BYTES FOR COOKIEFILE READING");
         return NULL;
     }
     char* b = bytes;
@@ -337,19 +337,19 @@ bool cookie_authenticate(torc* controller, torc_protocol_info_response protocol_
     torc_command command;
     if(torc_create_command(&command, TORC_AUTHENTICATE, 1) != 0) {
         free(secret);
-        perror("[TORC] FAILED TO CREATE COMMAND FOR COOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE COMMAND FOR COOKIE AUTHENTICATION");
         return false;
     }
     if(torc_add_option(&command, secret) != 0) {
         torc_free_command(&command);
         free(secret);
-        perror("[TORC] FAILED TO CREATE COMMAND FOR COOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE COMMAND FOR COOKIE AUTHENTICATION");
         return false;
     }
     if(torc_send_command(controller, &command) != 0) {
         torc_free_command(&command);
         free(secret);
-        perror("[TORC] FAILED TO SEND COMMAND FOR COOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND COMMAND FOR COOKIE AUTHENTICATION");
         return false;
     }
 
@@ -365,7 +365,7 @@ static char* safecookie_hmac_hex(const char* hash_constant, char* secret, size_t
     size_t all_size = secret_size + client_nonce_size + server_nonce_size;
     unsigned char* all = malloc(all_size);
     if(all == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE MSG BUFFER FOR HMAC");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE MSG BUFFER FOR HMAC");
         return NULL;
     }
     memcpy(all, secret, secret_size);
@@ -377,7 +377,7 @@ static char* safecookie_hmac_hex(const char* hash_constant, char* secret, size_t
     unsigned char* hmac = malloc(hmac_size); // hex sha246 output +1 for null ending
     if(hmac == NULL) {
         free(all);
-        perror("[TORC] FAILED TO ALLOCATE OUT BUFFER FOR HMAC");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE OUT BUFFER FOR HMAC");
         return NULL;
     }
     hmac = HMAC(EVP_sha256(), hash_constant, (int) strlen(hash_constant), all, all_size, hmac, &hmac_size);
@@ -387,7 +387,7 @@ static char* safecookie_hmac_hex(const char* hash_constant, char* secret, size_t
     char* out = malloc(hmac_size * 2 + 1);
     if(out == NULL) {
         free(hmac);
-        perror("[TORC] FAILED TO ALLOCATE HEX BUFFER FOR HMAC");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE HEX BUFFER FOR HMAC");
         return NULL;
     }
     for(int i = 0; i < hmac_size; i++) {
@@ -413,14 +413,14 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
     char* client_nonce = rand_bytes(client_nonce_size);
     if(client_nonce == NULL) {
         free(secret);
-        perror("[TORC] FAILED TO GENERATE CLIENT NONCE FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO GENERATE CLIENT NONCE FOR SAFECOOKIE AUTHENTICATION");
         return false;
     }
     char* client_nonce_hex = malloc(client_nonce_size * 2 + 1);
     if(client_nonce_hex == NULL) {
         free(secret);
         free(client_nonce);
-        perror("[TORC] FAILED TO GENERATE CLIENT NONCE FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO GENERATE CLIENT NONCE FOR SAFECOOKIE AUTHENTICATION");
         return false;
     }
     char* p = client_nonce_hex;
@@ -437,7 +437,7 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
         free(secret);
         free(client_nonce);
         free(client_nonce_hex);
-        perror("[TORC] FAILED TO SEND AUTHCHALLENGE IN SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND AUTHCHALLENGE IN SAFECOOKIE AUTHENTICATION");
         return false;
     }
 
@@ -460,7 +460,7 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
         free(client_nonce);
         free(client_nonce_hex);
         free(server_nonce);
-        perror("[TORC] FAILED TO VERIFY SERVERS AUTHENTICITY USING HMAC HASH");
+        TORC_LOG_ERROR("FAILED TO VERIFY SERVERS AUTHENTICITY USING HMAC HASH");
         return false;
     }
     free(server_hmac);
@@ -473,7 +473,7 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
         free(client_nonce);
         free(client_nonce_hex);
         free(server_nonce);
-        perror("[TORC] FAILED TO CREATE COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return false;
     }
     if(torc_add_option(&command, hmac) != 0) {
@@ -483,7 +483,7 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
         free(client_nonce);
         free(client_nonce_hex);
         free(server_nonce);
-        perror("[TORC] FAILED TO CREATE COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return false;
     }
     if(torc_send_command(controller, &command) != 0) {
@@ -493,7 +493,7 @@ bool safe_cookie_authenticate(torc* controller, torc_protocol_info_response prot
         free(client_nonce);
         free(client_nonce_hex);
         free(server_nonce);
-        perror("[TORC] FAILED TO SEND COMMAND FOR SAFECOOKIE AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND COMMAND FOR SAFECOOKIE AUTHENTICATION");
         return false;
     }
 
@@ -513,7 +513,7 @@ bool torc_authenticate(torc* controller, char* password) {
     torc_protocol_info_response protocol_info = torc_get_protocol_info(controller, &command);
     if(!protocol_info.sent || !command.response.ok) {
         torc_free_command(&command);
-        perror("[TORC] FAILED TO SEND PROTOCOL INFO COMMAND FOR AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND PROTOCOL INFO COMMAND FOR AUTHENTICATION");
         return false;
     }
 
@@ -539,7 +539,7 @@ bool torc_cookie_authenticate(torc* controller) {
     torc_protocol_info_response protocol_info = torc_get_protocol_info(controller, &command);
     if(!protocol_info.sent || !command.response.ok) {
         torc_free_command(&command);
-        perror("[TORC] FAILED TO SEND PROTOCOL INFO COMMAND FOR AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND PROTOCOL INFO COMMAND FOR AUTHENTICATION");
         return false;
     }
     torc_free_command(&command);
@@ -551,7 +551,7 @@ bool torc_safe_cookie_authenticate(torc* controller) {
     torc_protocol_info_response protocol_info = torc_get_protocol_info(controller, &command);
     if(!protocol_info.sent || !command.response.ok) {
         torc_free_command(&command);
-        perror("[TORC] FAILED TO SEND PROTOCOL INFO COMMAND FOR AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND PROTOCOL INFO COMMAND FOR AUTHENTICATION");
         return false;
     }
     torc_free_command(&command);
@@ -563,7 +563,7 @@ bool torc_password_authenticate(torc* controller, char* password) {
     // quote password
     char* quoted = dquote(password);
     if(quoted == NULL) {
-        perror("[TORC] FAILED TO AUTHENTICATE WITH PASSWORD");
+        TORC_LOG_ERROR("FAILED TO AUTHENTICATE WITH PASSWORD");
         return false;
     }
 
@@ -571,19 +571,19 @@ bool torc_password_authenticate(torc* controller, char* password) {
     torc_command command;
     if(torc_create_command(&command, TORC_AUTHENTICATE, 1) != 0) {
         free(quoted);
-        perror("[TORC] FAILED TO CREATE COMMAND FOR PASSWORD AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE COMMAND FOR PASSWORD AUTHENTICATION");
         return false;
     }
     if(torc_add_option(&command, quoted) != 0) {
         free(quoted);
         torc_free_command(&command);
-        perror("[TORC] FAILED TO CREATE COMMAND FOR PASSWORD AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO CREATE COMMAND FOR PASSWORD AUTHENTICATION");
         return false;
     }
     if(torc_send_command(controller, &command) != 0) {
         free(quoted);
         torc_free_command(&command);
-        perror("[TORC] FAILED TO SEND COMMAND FOR PASSWORD AUTHENTICATION");
+        TORC_LOG_ERROR("FAILED TO SEND COMMAND FOR PASSWORD AUTHENTICATION");
         return false;
     }
 
@@ -606,23 +606,23 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
     va_end(args);
 
     if(torc_create_command(command, TORC_ADD_ONION, (flags != TORC_FLAGS_NONE ? 3 : 2) + auth_num) != 0) {
-        perror("[TORC] FAILED TO CREATE ADD NEW ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO CREATE ADD NEW ONION COMMAND");
         return response;
     }
     if(torc_add_option(command, "NEW:BEST") != 0) {
-        perror("[TORC] FAILED TO ADD OPTION TO ADD NEW ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO ADD OPTION TO ADD NEW ONION COMMAND");
         return response;
     }
 
     // add port target to command
     char* port_target = concat("PORT=", port);
     if(port_target == NULL) {
-        perror("[TORC] FAILED TO ALLOCATE MEM FOR PORT OPTION IN ADD NEW ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR PORT OPTION IN ADD NEW ONION COMMAND");
         return response;
     }
     if(torc_add_option(command, port_target) != 0) {
         free(port_target);
-        perror("[TORC] FAILED TO ADD PORT OPTION TO ADD NEW ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO ADD PORT OPTION TO ADD NEW ONION COMMAND");
         return response;
     }
 
@@ -633,13 +633,13 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
         if(auth == NULL) {
             free(port_target);
             for(int j = 0; j < i; j++) free(client_auths[j]);
-            perror("[TORC] FAILED TO ADD PORT OPTION TO ADD NEW ONION COMMAND");
+            TORC_LOG_ERROR("FAILED TO ADD PORT OPTION TO ADD NEW ONION COMMAND");
             return response;
         }
         if(torc_add_option(command, auth) != 0) {
             free(port_target);
             for(int j = 0; j < i; j++) free(client_auths[j]);
-            perror("[TORC] FAILED TO ADD CLIENT AUTH OPTION TO ADD NEW ONION COMMAND");
+            TORC_LOG_ERROR("FAILED TO ADD CLIENT AUTH OPTION TO ADD NEW ONION COMMAND");
             return response;
         }
     }
@@ -652,7 +652,7 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
         if(flag_str == NULL) {
             free(port_target);
             for(int i = 0; i < auth_num; i++) free(client_auths[i]);
-            perror("[TORC] FAILED TO ALLOCATE MEM FOR FLAG OPTION IN ADD NEW ONION COMMAND");
+            TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR FLAG OPTION IN ADD NEW ONION COMMAND");
             return response;
         }
         free(flag_list);
@@ -661,7 +661,7 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
             free(port_target);
             for(int i = 0; i < auth_num; i++) free(client_auths[i]);
             free(flag_str);
-            perror("[TORC] FAILED TO ADD FLAG OPTION TO ADD NEW ONION COMMAND");
+            TORC_LOG_ERROR("FAILED TO ADD FLAG OPTION TO ADD NEW ONION COMMAND");
             return response;
         }
     }
@@ -671,7 +671,7 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
         free(port_target);
         for(int i = 0; i < auth_num; i++) free(client_auths[i]);
         if(flags != TORC_FLAGS_NONE) free(flag_str);
-        perror("[TORC] FAILED TO SEND ADD NEW ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO SEND ADD NEW ONION COMMAND");
         return response;
     }
     response.sent = true;
@@ -697,15 +697,15 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
 
 bool torc_del_onion(torc* controller, torc_command* command, char* service_id) {
     if(torc_create_command(command, TORC_DEL_ONION, 1) != 0) {
-        perror("[TORC] FAILED TO CREATE DEL ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO CREATE DEL ONION COMMAND");
         return false;
     }
     if(torc_add_option(command, service_id) != 0) {
-        perror("[TORC] FAILED TO ADD OPTION TO DEL ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO ADD OPTION TO DEL ONION COMMAND");
         return false;
     }
     if(torc_send_command(controller, command) != 0) {
-        perror("[TORC] FAILED TO SEND DEL ONION COMMAND");
+        TORC_LOG_ERROR("FAILED TO SEND DEL ONION COMMAND");
         return false;
     }
     return command->response.ok;
@@ -713,15 +713,15 @@ bool torc_del_onion(torc* controller, torc_command* command, char* service_id) {
 
 bool torc_send_signal(torc* controller, torc_command* command, const char* signal) {
     if(torc_create_command(command, TORC_SIGNAL, 1) != 0) {
-        perror("[TORC] FAILED TO CREATE SIGNAL COMMAND");
+        TORC_LOG_ERROR("FAILED TO CREATE SIGNAL COMMAND");
         return false;
     }
     if(torc_add_option(command, (char*) signal) != 0) {
-        perror("[TORC] FAILED TO ADD OPTION TO SIGNAL COMMAND");
+        TORC_LOG_ERROR("FAILED TO ADD OPTION TO SIGNAL COMMAND");
         return false;
     }
     if(torc_send_command(controller, command) != 0) {
-        perror("[TORC] FAILED TO SEND SIGNAL COMMAND");
+        TORC_LOG_ERROR("FAILED TO SEND SIGNAL COMMAND");
         return false;
     }
     return command->response.ok;
@@ -729,11 +729,11 @@ bool torc_send_signal(torc* controller, torc_command* command, const char* signa
 
 bool torc_take_ownership(torc* controller, torc_command* command) {
     if(torc_create_command(command, TORC_TAKEOWNERSHIP, 0) != 0) {
-        perror("[TORC] FAILED TO CREATE TAKEOWNERSHIP COMMAND");
+        TORC_LOG_ERROR("FAILED TO CREATE TAKEOWNERSHIP COMMAND");
         return false;
     }
     if(torc_send_command(controller, command) != 0) {
-        perror("[TORC] FAILED TO SEND TAKEOWNERSHIP COMMAND");
+        TORC_LOG_ERROR("FAILED TO SEND TAKEOWNERSHIP COMMAND");
         return false;
     }
     return command->response.ok;
@@ -741,11 +741,11 @@ bool torc_take_ownership(torc* controller, torc_command* command) {
 
 bool torc_drop_ownership(torc* controller, torc_command* command) {
     if(torc_create_command(command, TORC_DROPOWNERSHIP, 0) != 0) {
-        perror("[TORC] FAILED TO CREATE DROPOWNERSHIP COMMAND");
+        TORC_LOG_ERROR("FAILED TO CREATE DROPOWNERSHIP COMMAND");
         return false;
     }
     if(torc_send_command(controller, command) != 0) {
-        perror("[TORC] FAILED TO SEND DROPOWNERSHIP COMMAND");
+        TORC_LOG_ERROR("FAILED TO SEND DROPOWNERSHIP COMMAND");
         return false;
     }
     return command->response.ok;

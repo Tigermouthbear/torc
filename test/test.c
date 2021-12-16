@@ -21,32 +21,32 @@ int main() {
     // create tor controller
     torc controller;
     if(torc_connect_controller(&controller, torc_create_unix_info("/var/lib/tor/control")) != 0) {
-        printf("FAILED TO CONNECT TOR CONTROLLER!\n");
+        TORC_LOG_ERROR("FAILED TO CONNECT TOR CONTROLLER!");
         return 1;
     }
-    printf("TORC controller connected\n");
+    TORC_LOG_DEBUG("controller connected\n");
 
     // authenticate controller
     if(!torc_authenticate(&controller, NULL)) { // password arg can be set to NULL if cookie auth used
-        printf("FAILED TO AUTHENTICATE TOR CONTROLLER!\n");
+        TORC_LOG_ERROR("FAILED TO AUTHENTICATE TOR CONTROLLER!");
         torc_close_controller(&controller);
         return 1;
     }
-    printf("TORC controller authenticated\n\n");
+    TORC_LOG_DEBUG("controller authenticated\n\n");
 
     // check controller connection
     torc_command command;
     torc_protocol_info_response protocol_info_response = torc_get_protocol_info(&controller, &command);
     if(protocol_info_response.sent && command.response.ok && protocol_info_response.version != NULL) {
-        printf("TOR VERSION: %s\n", protocol_info_response.version);
-    } else printf("FAILED TO SEND PROTOCOLINFO COMMAND\n");
+        TORC_LOG_DEBUG("TOR VERSION: %s\n", protocol_info_response.version);
+    } else TORC_LOG_ERROR("FAILED TO SEND PROTOCOLINFO COMMAND");
     torc_free_command(&command);
 
     // add temporary onion service for webserver
     torc_add_onion_response add_onion_response = torc_add_new_onion(&controller, &command, "80,8000", TORC_FLAGS_DISCARD_PK, 0);
     if(add_onion_response.sent && command.response.ok && add_onion_response.service_id != NULL) {
-        printf("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
-    } else printf("FAILED TO SEND ADD_ONION COMMAND\n\n");
+        TORC_LOG_DEBUG("ONION URL: http://%s.onion/\n\n", add_onion_response.service_id);
+    } else TORC_LOG_ERROR("FAILED TO SEND ADD_ONION COMMAND");
     torc_free_command(&command);
 
     // setup mongoose to listen on addr
@@ -65,7 +65,7 @@ int main() {
 
     // destroy tor controller
     torc_close_controller(&controller);
-    printf("\nTORC controller closed\n");
+    TORC_LOG_DEBUG("controller closed\n");
 
     return 0;
 }
