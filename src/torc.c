@@ -374,16 +374,16 @@ int torc_connect_controller(torc* controller, torc_info info) {
 
     // create socket address for either inet or unix socket
     struct sockaddr* servaddr;
+    struct sockaddr_un sockaddr_un;
+    struct sockaddr_in servaddr_in;
     size_t servaddr_len;
     if(info.nix) {
-        struct sockaddr_un sockaddr_un;
         memset(&sockaddr_un, 0, sizeof(sockaddr_un));
         sockaddr_un.sun_family = AF_UNIX;
         strncpy(sockaddr_un.sun_path, info.addr, sizeof(sockaddr_un.sun_path) - 1);
         servaddr = (struct sockaddr*) &sockaddr_un;
         servaddr_len = sizeof(sockaddr_un);
     } else {
-        struct sockaddr_in servaddr_in;
         memset(&servaddr_in, 0, sizeof(servaddr_in));
         servaddr_in.sin_family = AF_INET;
         servaddr_in.sin_addr.s_addr = inet_addr(info.addr);
