@@ -38,7 +38,7 @@ typedef struct {
 } torc_value;
 
 typedef struct {
-    pthread_mutex_t lock; // lock to prevent mulit thread variable errors
+    pthread_mutex_t lock; // lock to prevent multi thread variable errors
     bool received;
     bool ok;
     char code[3];
@@ -51,7 +51,7 @@ typedef struct {
 
     unsigned int lines; // lines in response
     unsigned int* line_lens; // characters of each line
-    size_t line_buf_len; // length of line lenght buffer
+    size_t line_buf_len; // length of line length buffer
 
     unsigned int values_len;
     torc_value** values;
@@ -69,8 +69,9 @@ typedef struct {
 } torc_command;
 
 typedef struct {
+    pthread_mutex_t lock; // lock to prevent multi thread variable errors
+
     torc_info info;
-    bool debug;
 
     int socket;
     pthread_t listen_thread;
@@ -85,6 +86,7 @@ typedef struct {
 torc_info torc_default_addr_info(void);
 torc_info torc_create_unix_info(const char* location);
 int torc_connect_controller(torc* controller, torc_info info);
+bool torc_is_alive(torc* controller);
 void torc_close_controller(torc* controller);
 
 int torc_create_command(torc_command* command, char* keyword, int param_len);

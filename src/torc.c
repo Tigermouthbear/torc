@@ -113,16 +113,16 @@ static int add_value_to_response(torc_response* response, torc_value* key_value)
 #define MODE_VALUE_SCAN 2
 static void* socket_listener(void* controller_ptr) {
     torc* controller = (torc*) controller_ptr;
-    struct timeval timeout = { 0, 10000 };
-    // ^ check if controller is still alive every 10 milliseconds
-    // this means that the maximum shutdown time should be around 10 ms
+    struct timeval timeout = { 0, 2000 };
+    // ^ check if controller is still alive every 2 milliseconds
+    // this means that the maximum shutdown time should be around 2 ms
 
     int n;
     torc_response* curr_response = NULL;
     torc_value* curr_value = calloc(1, sizeof(torc_value));
     if(curr_value == NULL) {
         TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
-        goto socket_error;
+        goto socket_close;
     }
 
     // variables for all scanning modes
@@ -134,7 +134,8 @@ static void* socket_listener(void* controller_ptr) {
     size_t value_size;
     bool first;
 
-    while(controller->alive) { // loop while controller is active
+    // read from socket in loop
+    for(;;) {
         // check if socket can be read using select, if not continue
         fd_set fd;
         FD_ZERO(&fd);
@@ -145,15 +146,31 @@ static void* socket_listener(void* controller_ptr) {
             TORC_LOG_ERROR("FAILED TO READ SOCKET USING SELECT");
             break;
         }
-        if(!FD_ISSET(controller->socket, &fd)) break;
+        if(!FD_ISSET(controller->socket, &fd)) {
+            TORC_LOG_ERROR("FAILED TO CHECK SOCKET USING SELECT");
+            break;
+        }
 
         // read available data into buffer
         char buf[1024];
         ssize_t read = recv(controller->socket, buf, sizeof(buf), 0);
-        if(read < 0) break;
+        if(read < 0) {
+            TORC_LOG_ERROR("FAILED TO READ SOCKET");
+            break;
+        }
 
-        // find / verify there is a response
+        // check if controller is still alive
+        pthread_mutex_lock(&controller->lock); // we have to lock the controller mutex while we use it...
+        if(!controller->alive) { // make sure controller is alive
+            pthread_mutex_unlock(&controller->lock);
+            break;
+        }
+
+        // check there is a response
         if(curr_response == NULL) curr_response = pop_awaiting_response(controller);
+
+        // unlock mutex when done using controller
+        pthread_mutex_unlock(&controller->lock);
 
         // TODO: parse '+' line extensions
         // loop over data, add to response, and look for new line character
@@ -173,7 +190,7 @@ static void* socket_listener(void* controller_ptr) {
                     if(c != CARRIAGE_RETURN) {
                         if(write_to_response_data(curr_response, &size, c) != 0) {
                             TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
-                            goto socket_error;
+                            goto socket_close;
                         }
                     }
 
@@ -195,24 +212,21 @@ static void* socket_listener(void* controller_ptr) {
 
                             // we then need to read the remainder of the final line
                             mode = MODE_FINAL_SCAN;
-                            continue;
                         } else { // this is a response value line
                             value_type = TORC_TYPE_VALUE;
                             value_size = 0;
                             first = true;
                             mode = MODE_VALUE_SCAN;
-                            continue;
                         }
                     }
-
                     // should only have LINE_FEED here if line length is less than 4
                     // this handles this cleanly, even though its not in
                     // the control port spec
-                    if(c == LINE_FEED) {
+                    else if(c == LINE_FEED) {
                         if(curr_response != NULL) {
                             if(add_line_len(curr_response, line_pos) != 0) {
                                 TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
-                                goto socket_error;
+                                goto socket_close;
                             }
                         }
                         line_pos = 0;
@@ -221,7 +235,7 @@ static void* socket_listener(void* controller_ptr) {
                     if(c != CARRIAGE_RETURN && c != LINE_FEED) {
                         if(write_to_response_data(curr_response, &size, c) != 0) {
                             TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
-                            goto socket_error;
+                            goto socket_close;
                         }
                         line_pos++;
                     }
@@ -231,7 +245,7 @@ static void* socket_listener(void* controller_ptr) {
                         // save length of line
                         if(add_line_len(curr_response, line_pos) != 0) {
                             TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
-                            goto socket_error;
+                            goto socket_close;
                         }
                         line_pos = 0;
 
@@ -242,7 +256,7 @@ static void* socket_listener(void* controller_ptr) {
                         if(size >= curr_response->buf_len) {
                             if(expand_response_size(curr_response) != 0) {
                                 TORC_LOG_ERROR("FAILED TO EXPAND RESPONSE BUFFER");
-                                goto socket_error;
+                                goto socket_close;
                             }
                         }
                         *curr_response->curr = 0;
@@ -257,7 +271,9 @@ static void* socket_listener(void* controller_ptr) {
                         pthread_mutex_unlock(&curr_response->lock);
 
                         // pop next response
+                        pthread_mutex_lock(&controller->lock);
                         curr_response = pop_awaiting_response(controller);
+                        pthread_mutex_unlock(&controller->lock);
 
                         // stop reading final line
                         mode = MODE_SCANNING;
@@ -279,7 +295,7 @@ static void* socket_listener(void* controller_ptr) {
                     if(c != CARRIAGE_RETURN && c != LINE_FEED) {
                         if(write_to_response_data(curr_response, &size, c) != 0) {
                             TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
-                            goto socket_error;
+                            goto socket_close;
                         }
                         line_pos++;
                         value_size++;
@@ -291,7 +307,7 @@ static void* socket_listener(void* controller_ptr) {
                         line_pos++; // +1 character for char we read at pos 3
                         if(add_line_len(curr_response, line_pos) != 0) {
                             TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
-                            goto socket_error;
+                            goto socket_close;
                         }
                         line_pos = 0;
 
@@ -309,14 +325,14 @@ static void* socket_listener(void* controller_ptr) {
                         // write LINE_FEED to preserve line breaks
                         if(write_to_response_data(curr_response, &size, LINE_FEED) != 0) {
                             TORC_LOG_ERROR("FAILED TO WRITE TO RESPONSE DATA");
-                            goto socket_error;
+                            goto socket_close;
                         }
 
                         // allocate new value for next line/value
                         curr_value = calloc(1, sizeof(torc_value));
                         if(curr_value == NULL) {
                             TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE VALUE BUFFER");
-                            goto socket_error;
+                            goto socket_close;
                         }
 
                         // stop reading line
@@ -328,14 +344,8 @@ static void* socket_listener(void* controller_ptr) {
             // if we get here, this isn't a response to a command, but an asynchronous message from the server
             // currently this library only supports call and response, it will likely be added later
         }*/
-
-        if(controller->debug) if(fputs(buf, stdout) == EOF) printf("[TORC] ERROR PRINTING DEBUG INFO");
     }
-    socket_error:
-    if(controller->alive) {
-        TORC_LOG_ERROR("ERROR RUNNING SOCKET LISTENER");
-        // TODO: shutdown controller, gracefully :)
-    }
+    socket_close:
 
     if(curr_value != NULL) free(curr_value);
 
@@ -353,6 +363,13 @@ torc_info torc_create_unix_info(const char* location) {
 }
 
 int torc_connect_controller(torc* controller, torc_info info) {
+    // create and lock thread mutex
+    if(pthread_mutex_init(&controller->lock, NULL) != 0) {
+        TORC_LOG_ERROR("FAILED TO INITIALIZE COMMAND MUTEX LOCK");
+        return 1;
+    }
+    pthread_mutex_lock(&controller->lock);
+
     controller->info = info;
 
     // create response list with default length of 10
@@ -360,6 +377,7 @@ int torc_connect_controller(torc* controller, torc_info info) {
     controller->responses = calloc(controller->responses_len, sizeof(torc_response*));
     if(controller->responses == NULL) {
         TORC_LOG_ERROR("FAILED TO ALLOCATE RESPONSE BUFFER");
+        pthread_mutex_unlock(&controller->lock);
         return 1;
     }
     controller->response_read_num = 0;
@@ -369,6 +387,8 @@ int torc_connect_controller(torc* controller, torc_info info) {
     controller->socket = socket(info.nix ? AF_UNIX : AF_INET, SOCK_STREAM, 0);
     if(controller->socket == -1) {
         TORC_LOG_ERROR("FAILED TO CREATE SOCKET CONNECTION");
+        free(controller->responses);
+        pthread_mutex_unlock(&controller->lock);
         return 1;
     }
 
@@ -395,15 +415,25 @@ int torc_connect_controller(torc* controller, torc_info info) {
     // connect socket
     if((connect(controller->socket, servaddr, servaddr_len)) != 0) {
         TORC_LOG_ERROR("FAILED TO ESTABLISH SOCKET CONNECTION");
+        free(controller->responses);
+        pthread_mutex_unlock(&controller->lock);
         return 1;
     }
+    controller->alive = true;
 
     // create listener thread
     pthread_create(&controller->listen_thread, NULL, socket_listener, controller);
 
-    controller->alive = true;
-    controller->debug = false;
+    pthread_mutex_unlock(&controller->lock);
     return 0;
+}
+
+// users must use this function to check alive state
+bool torc_is_alive(torc* controller) {
+    pthread_mutex_lock(&controller->lock);
+    bool alive = controller->alive;
+    pthread_mutex_unlock(&controller->lock);
+    return alive;
 }
 
 void torc_close_controller(torc* controller) {
@@ -413,8 +443,11 @@ void torc_close_controller(torc* controller) {
     torc_send_command_async(controller, &quit_command);
 
     // kill and join listener thread
+    pthread_mutex_lock(&controller->lock);
     controller->alive = false;
+    pthread_mutex_unlock(&controller->lock);
     pthread_join(controller->listen_thread, NULL);
+    pthread_mutex_destroy(&controller->lock);
 
     torc_free_command(&quit_command);
     free(controller->responses);
@@ -527,10 +560,13 @@ int torc_send_command_async(torc* controller, torc_command* command) {
     }
 
     // add to response pool, then send compiled command over socket
+    pthread_mutex_lock(&controller->lock);
     if(push_awaiting_response(controller, &command->response) != 0) {
         TORC_LOG_ERROR("FAILED TO PUSH RESPONSE TO BUFFER");
+        pthread_mutex_unlock(&controller->lock);
         return 1;
     }
+    pthread_mutex_unlock(&controller->lock);
     send(controller->socket, compiled, command->compiled_len, 0);
 
     free(compiled); // make sure to free compiled
@@ -584,4 +620,3 @@ void torc_print_line(torc_response* response, size_t line) {
         printf("%c", *(p++));
     }
 }
-
