@@ -695,6 +695,123 @@ torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* comma
     return response;
 }
 
+torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags, int auth_num, ...) {
+    torc_add_onion_response response = { false };
+
+    // copy client auths(var args) to array
+    const char* auth_keys[auth_num];
+    va_list args;
+    va_start(args, auth_num);
+    for(int i = 0; i < auth_num; i++) {
+        auth_keys[i] = va_arg(args, char*);
+    }
+    va_end(args);
+
+    if(torc_create_command(command, TORC_ADD_ONION, (flags != TORC_FLAGS_NONE ? 3 : 2) + auth_num) != 0) {
+        TORC_LOG_ERROR("FAILED TO CREATE ADD ONION COMMAND");
+        return response;
+    }
+
+    char* key_blob = concat("ED25519-V3:", private_key);
+    if(key_blob == NULL) {
+        TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR KEY BLOB IN ADD ONION COMMAND");
+        return response;
+    }
+    if(torc_add_option(command, key_blob) != 0) {
+        free(key_blob);
+        TORC_LOG_ERROR("FAILED TO ADD OPTION TO ADD ONION COMMAND");
+        return response;
+    }
+
+    // add port target to command
+    char* port_target = concat("PORT=", port);
+    if(port_target == NULL) {
+        free(key_blob);
+        TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR PORT OPTION IN ADD ONION COMMAND");
+        return response;
+    }
+    if(torc_add_option(command, port_target) != 0) {
+        free(key_blob);
+        free(port_target);
+        TORC_LOG_ERROR("FAILED TO ADD PORT OPTION TO ADD ONION COMMAND");
+        return response;
+    }
+
+    // add client auths
+    char* client_auths[auth_num];
+    for(int i = 0; i < auth_num; i++) {
+        char* auth = concat("ClientAuthV3=", client_auths[i]);
+        if(auth == NULL) {
+            free(key_blob);
+            free(port_target);
+            for(int j = 0; j < i; j++) free(client_auths[j]);
+            TORC_LOG_ERROR("FAILED TO ADD PORT OPTION TO ADD ONION COMMAND");
+            return response;
+        }
+        if(torc_add_option(command, auth) != 0) {
+            free(key_blob);
+            free(port_target);
+            for(int j = 0; j < i; j++) free(client_auths[j]);
+            TORC_LOG_ERROR("FAILED TO ADD CLIENT AUTH OPTION TO ADD ONION COMMAND");
+            return response;
+        }
+    }
+
+    // add flags to command
+    char* flag_str = NULL;
+    if(flags != TORC_FLAGS_NONE) {
+        char* flag_list = write_flags(flags, 4, "DiscardPK", "Detach", "V3Auth", "NonAnonymous");
+        flag_str = concat("Flags=", flag_list);
+        if(flag_str == NULL) {
+            free(key_blob);
+            free(port_target);
+            for(int i = 0; i < auth_num; i++) free(client_auths[i]);
+            TORC_LOG_ERROR("FAILED TO ALLOCATE MEM FOR FLAG OPTION IN ADD ONION COMMAND");
+            return response;
+        }
+        free(flag_list);
+
+        if(torc_add_option(command, flag_str) != 0) {
+            free(key_blob);
+            free(port_target);
+            for(int i = 0; i < auth_num; i++) free(client_auths[i]);
+            free(flag_str);
+            TORC_LOG_ERROR("FAILED TO ADD FLAG OPTION TO ADD ONION COMMAND");
+            return response;
+        }
+    }
+
+    // send command
+    if(torc_send_command(controller, command) != 0) {
+        free(key_blob);
+        free(port_target);
+        for(int i = 0; i < auth_num; i++) free(client_auths[i]);
+        if(flags != TORC_FLAGS_NONE) free(flag_str);
+        TORC_LOG_ERROR("FAILED TO SEND ADD ONION COMMAND");
+        return response;
+    }
+    response.sent = true;
+    free(key_blob);
+    free(port_target);
+    for(int i = 0; i < auth_num; i++) free(client_auths[i]);
+    if(flags != TORC_FLAGS_NONE) free(flag_str);
+
+    // read response
+    if(!command->response.ok) return response;
+    for(int i = 0; i < command->response.values_num; i++) {
+        torc_value* value = command->response.values[i];
+        if(value->type == TORC_TYPE_KEY_VALUE) {
+            if(strcmp(value->key, "ServiceID") == 0) {
+                response.service_id = value->value;
+            } else if(strcmp(value->key, "PrivateKey") == 0) {
+                response.private_key = value->value;
+            }
+        }
+    }
+
+    return response;
+}
+
 bool torc_del_onion(torc* controller, torc_command* command, char* service_id) {
     if(torc_create_command(command, TORC_DEL_ONION, 1) != 0) {
         TORC_LOG_ERROR("FAILED TO CREATE DEL ONION COMMAND");

@@ -134,12 +134,14 @@ static void* socket_listener(void* controller_ptr) {
     size_t value_size;
     bool first;
 
+    // file descriptor for socket, its important we don't do this in the loop
+    fd_set fd;
+    FD_ZERO(&fd);
+    FD_SET(controller->socket, &fd);
+
     // read from socket in loop
     for(;;) {
         // check if socket can be read using select, if not continue
-        fd_set fd;
-        FD_ZERO(&fd);
-        FD_SET(controller->socket, &fd);
         n = select(controller->socket + 1, &fd, NULL, NULL, &timeout);
         if(n == 0) continue;
         else if(n < 0) {

@@ -84,9 +84,10 @@ typedef struct {
     bool sent;
     char* service_id;
     char* private_key;
+    // TODO: client auths
 } torc_add_onion_response;
 torc_add_onion_response torc_add_new_onion(torc* controller, torc_command* command, char* port, int flags, int auth_num, ...);
-// TODO: THIS, ALSO ADD V3 ONION PK GENERATION
+// TODO: ADD V3 ONION PK GENERATION
 torc_add_onion_response torc_add_onion(torc* controller, torc_command* command, char* port, char* private_key, int flags, int auth_num, ...);
 
 // IMPLEMENTATION OF DEL_ONION
