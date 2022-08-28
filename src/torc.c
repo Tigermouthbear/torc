@@ -113,11 +113,7 @@ static int add_value_to_response(torc_response* response, torc_value* key_value)
 #define MODE_VALUE_SCAN 2
 static void* socket_listener(void* controller_ptr) {
     torc* controller = (torc*) controller_ptr;
-    struct timeval timeout = { 0, 2000 };
-    // ^ check if controller is still alive every 2 milliseconds
-    // this means that the maximum shutdown time should be around 2 ms
 
-    int n;
     torc_response* curr_response = NULL;
     torc_value* curr_value = calloc(1, sizeof(torc_value));
     if(curr_value == NULL) {
@@ -134,45 +130,16 @@ static void* socket_listener(void* controller_ptr) {
     size_t value_size;
     bool first;
 
-    // file descriptor for socket, its important we don't do this in the loop
-    fd_set fd;
-    FD_ZERO(&fd);
-    FD_SET(controller->socket, &fd);
-
-    // read from socket in loop
-    for(;;) {
-        // check if socket can be read using select, if not continue
-        n = select(controller->socket + 1, &fd, NULL, NULL, &timeout);
-        if(n == 0) continue;
-        else if(n < 0) {
-            TORC_LOG_ERROR("FAILED TO READ SOCKET USING SELECT");
-            break;
-        }
-        if(!FD_ISSET(controller->socket, &fd)) {
-            TORC_LOG_ERROR("FAILED TO CHECK SOCKET USING SELECT");
-            break;
-        }
-
-        // read available data into buffer
-        char buf[1024];
-        ssize_t read = recv(controller->socket, buf, sizeof(buf), 0);
-        if(read < 0) {
-            TORC_LOG_ERROR("FAILED TO READ SOCKET");
-            break;
-        }
-
-        // check if controller is still alive
-        pthread_mutex_lock(&controller->lock); // we have to lock the controller mutex while we use it...
-        if(!controller->alive) { // make sure controller is alive
+    // read from socket to buffer
+    char buf[1024];
+    size_t read;
+    while((read = recv(controller->socket, buf, sizeof(buf), 0)) > 0) {
+        // check if there is a response
+        if(curr_response == NULL) {
+            pthread_mutex_lock(&controller->lock); // we have to lock the controller mutex while we use it...
+            curr_response = pop_awaiting_response(controller);
             pthread_mutex_unlock(&controller->lock);
-            break;
         }
-
-        // check there is a response
-        if(curr_response == NULL) curr_response = pop_awaiting_response(controller);
-
-        // unlock mutex when done using controller
-        pthread_mutex_unlock(&controller->lock);
 
         // TODO: parse '+' line extensions
         // loop over data, add to response, and look for new line character
@@ -225,11 +192,9 @@ static void* socket_listener(void* controller_ptr) {
                     // this handles this cleanly, even though its not in
                     // the control port spec
                     else if(c == LINE_FEED) {
-                        if(curr_response != NULL) {
-                            if(add_line_len(curr_response, line_pos) != 0) {
-                                TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
-                                goto socket_close;
-                            }
+                        if(add_line_len(curr_response, line_pos) != 0) {
+                            TORC_LOG_ERROR("FAILED TO ADD LINE LENGTH");
+                            goto socket_close;
                         }
                         line_pos = 0;
                     } else if(c != CARRIAGE_RETURN) line_pos++; // skip \r
@@ -347,7 +312,15 @@ static void* socket_listener(void* controller_ptr) {
             // currently this library only supports call and response, it will likely be added later
         }*/
     }
+
+    // handle unexpected or expected close
     socket_close:
+    pthread_mutex_lock(&controller->lock);
+    if(controller->alive) {
+        controller->alive = false;
+        close(controller->socket);
+    }
+    pthread_mutex_unlock(&controller->lock);
 
     if(curr_value != NULL) free(curr_value);
 
@@ -439,23 +412,16 @@ bool torc_is_alive(torc* controller) {
 }
 
 void torc_close_controller(torc* controller) {
-    // send quit to server and kill immediately
+    // we rely on sending a quit command to server
     torc_command quit_command;
     torc_create_command(&quit_command, TORC_QUIT, 0);
     torc_send_command_async(controller, &quit_command);
 
-    // kill and join listener thread
-    pthread_mutex_lock(&controller->lock);
-    controller->alive = false;
-    pthread_mutex_unlock(&controller->lock);
     pthread_join(controller->listen_thread, NULL);
     pthread_mutex_destroy(&controller->lock);
 
     torc_free_command(&quit_command);
     free(controller->responses);
-
-    // close socket
-    close(controller->socket);
 }
 
 int torc_create_command(torc_command* command, char* keyword, int param_len) {

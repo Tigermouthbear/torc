@@ -526,8 +526,6 @@ bool torc_authenticate(torc* controller, char* password) {
         return cookie_authenticate(controller, protocol_info);
     } else if(password != NULL && (protocol_info.auth_methods & TORC_FLAGS_HASHEDPASSWORD) == TORC_FLAGS_HASHEDPASSWORD) {
         return torc_password_authenticate(controller, password);
-    } else if((protocol_info.auth_methods & TORC_FLAGS_COOKIE) == TORC_FLAGS_COOKIE) {
-        return cookie_authenticate(controller, protocol_info);
     }
 
     torc_free_command(&command);
@@ -558,7 +556,6 @@ bool torc_safe_cookie_authenticate(torc* controller) {
     return safe_cookie_authenticate(controller, protocol_info);
 }
 
-// ERROR CHECK THESE COMMANDS
 bool torc_password_authenticate(torc* controller, char* password) {
     // quote password
     char* quoted = dquote(password);
